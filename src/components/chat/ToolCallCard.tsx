@@ -1,6 +1,5 @@
 import React from 'react';
 import { useAppStore } from '@/lib/store/appStore';
-import { selectToolCall } from '@/lib/store/chatSelectors';
 
 interface ToolCallCardProps {
   call_id: string;

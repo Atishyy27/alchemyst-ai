@@ -1,4 +1,4 @@
-import type { AppState, ToolCallState } from './appStore';
+import type { AppState } from './appStore';
 
 // ── View-Model Types ───────────────────────────────────────────────────
 

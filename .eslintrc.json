@@ -10,7 +10,7 @@
     "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
     "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/ban-ts-comment": ["error", {
-      "ts-ignore": "error"
+      "ts-ignore": true
     }]
   },
   "overrides": [

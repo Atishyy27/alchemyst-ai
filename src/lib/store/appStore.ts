@@ -62,7 +62,7 @@ export interface AppState {
 
 // ── Store ─────────────────────────────────────────────────────────────
 
-export const useAppStore = create<AppState>()((set, get) => ({
+export const useAppStore = create<AppState>()((set) => ({
   // Initial State
   timeline: [],
   seqToTimeline: {},
