@@ -30,7 +30,7 @@ export function MessageList() {
             <div className="space-y-1">
               {group.items.map((item, i) => {
                 if (item.kind === 'text') {
-                  return <StreamingText key={i} content={item.content} />;
+                  return <StreamingText key={i} content={item.content} firstSeq={item.firstSeq} />;
                 } else if (item.kind === 'tool_call') {
                   return <ToolCallCard key={i} call_id={item.call_id} />;
                 }
