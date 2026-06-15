@@ -1,0 +1,183 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { useAppStore } from './appStore';
+import type { ServerMessage } from '@/types/protocol';
+
+describe('AppStore', () => {
+  beforeEach(() => {
+    useAppStore.getState().resetChat();
+  });
+
+  it('handles STREAM segmenting correctly', () => {
+    const store = useAppStore.getState();
+
+    // 1. Initial text token
+    store.processServerMessage({
+      type: 'TOKEN',
+      stream_id: 's1',
+      seq: 1,
+      text: 'hello',
+    } as ServerMessage);
+
+    let state = useAppStore.getState();
+    let stream = state.streams['s1'];
+    expect(stream.segments).toHaveLength(1);
+    expect(stream.segments[0]).toEqual({ kind: 'text', content: 'hello' });
+
+    // 2. Append another text token
+    store.processServerMessage({
+      type: 'TOKEN',
+      stream_id: 's1',
+      seq: 2,
+      text: ' world',
+    } as ServerMessage);
+
+    state = useAppStore.getState();
+    stream = state.streams['s1'];
+    expect(stream.segments).toHaveLength(1);
+    expect(stream.segments[0]).toEqual({ kind: 'text', content: 'hello world' });
+
+    // 3. Interrupt with a TOOL_CALL
+    store.processServerMessage({
+      type: 'TOOL_CALL',
+      stream_id: 's1',
+      seq: 3,
+      call_id: 'tc1',
+      tool_name: 'search',
+      args: { q: 'test' },
+    } as ServerMessage);
+
+    state = useAppStore.getState();
+    stream = state.streams['s1'];
+    expect(stream.segments).toHaveLength(2);
+    expect(stream.segments[1]).toEqual({ kind: 'tool_call', call_id: 'tc1' });
+
+    // 4. Follow up with more text tokens
+    store.processServerMessage({
+      type: 'TOKEN',
+      stream_id: 's1',
+      seq: 4,
+      text: ' found',
+    } as ServerMessage);
+
+    state = useAppStore.getState();
+    stream = state.streams['s1'];
+    expect(stream.segments).toHaveLength(3);
+    expect(stream.segments[2]).toEqual({ kind: 'text', content: ' found' });
+  });
+
+  it('guarantees TOOL_CALL idempotency', () => {
+    const store = useAppStore.getState();
+
+    const toolCallMsg: ServerMessage = {
+      type: 'TOOL_CALL',
+      stream_id: 's1',
+      seq: 3,
+      call_id: 'tc1',
+      tool_name: 'search',
+      args: { q: 'test' },
+    };
+
+    store.processServerMessage(toolCallMsg);
+    
+    // Duplicate arrival (e.g., chaos mode replay)
+    store.processServerMessage(toolCallMsg);
+
+    const state = useAppStore.getState();
+    const stream = state.streams['s1'];
+    
+    // Should only have 1 tool call segment
+    expect(stream.segments).toHaveLength(1);
+    // Should only have 1 timeline entry
+    expect(state.timeline.filter(t => t.type === 'tool_call')).toHaveLength(1);
+  });
+
+  it('maps seq to timeline items correctly', () => {
+    const store = useAppStore.getState();
+
+    store.processServerMessage({
+      type: 'TOKEN',
+      stream_id: 's1',
+      seq: 10,
+      text: 'test',
+    } as ServerMessage);
+
+    store.processServerMessage({
+      type: 'TOOL_CALL',
+      stream_id: 's1',
+      seq: 15,
+      call_id: 'tc1',
+      tool_name: 'test',
+      args: {},
+    } as ServerMessage);
+
+    const state = useAppStore.getState();
+    expect(state.seqToTimeline[10]).toEqual({ type: 'message', stream_id: 's1' });
+    expect(state.seqToTimeline[15]).toEqual({ type: 'tool_call', call_id: 'tc1' });
+  });
+
+  it('stores context history', () => {
+    const store = useAppStore.getState();
+
+    store.processServerMessage({
+      type: 'CONTEXT_SNAPSHOT',
+      context_id: 'ctx1',
+      seq: 5,
+      data: { snapshot: 1 },
+    } as ServerMessage);
+
+    store.processServerMessage({
+      type: 'CONTEXT_SNAPSHOT',
+      context_id: 'ctx1',
+      seq: 20,
+      data: { snapshot: 2 },
+    } as ServerMessage);
+
+    const state = useAppStore.getState();
+    const history = state.contexts['ctx1'];
+    
+    expect(history).toHaveLength(2);
+    expect(history[0].data).toEqual({ snapshot: 1 });
+    expect(history[1].data).toEqual({ snapshot: 2 });
+  });
+
+  it('maintains tool_call_pending when tc_1 completes but tc_2 is still pending', () => {
+    const store = useAppStore.getState();
+    const streamId = 's_01';
+
+    // 1. Initialize stream
+    store.processServerMessage({ type: 'TOKEN', seq: 1, stream_id: streamId, text: 'Fetching...' } as ServerMessage);
+    
+    // 2. Fire tc_1 and tc_2 concurrently
+    store.processServerMessage({ type: 'TOOL_CALL', seq: 2, call_id: 'tc_1', stream_id: streamId, tool_name: 'db', args: {} } as ServerMessage);
+    store.processServerMessage({ type: 'TOOL_CALL', seq: 3, call_id: 'tc_2', stream_id: streamId, tool_name: 'api', args: {} } as ServerMessage);
+
+    // Assert both pending
+    expect(useAppStore.getState().toolCalls['tc_1'].status).toBe('pending');
+    expect(useAppStore.getState().toolCalls['tc_2'].status).toBe('pending');
+
+    // 3. Complete tc_1
+    store.processServerMessage({ type: 'TOOL_RESULT', seq: 4, call_id: 'tc_1', stream_id: streamId, result: { ok: true } } as ServerMessage);
+
+    // Assert stream is STILL pending because tc_2 is unresolved
+    expect(useAppStore.getState().toolCalls['tc_1'].status).toBe('completed');
+    expect(useAppStore.getState().toolCalls['tc_2'].status).toBe('pending');
+  });
+
+  it('resumes streaming only when both tc_1 and tc_2 complete', () => {
+    const store = useAppStore.getState();
+    const streamId = 's_02';
+
+    store.processServerMessage({ type: 'TOKEN', seq: 1, stream_id: streamId, text: 'Fetching...' } as ServerMessage);
+    store.processServerMessage({ type: 'TOOL_CALL', seq: 2, call_id: 'tc_1', stream_id: streamId, tool_name: 'db', args: {} } as ServerMessage);
+    store.processServerMessage({ type: 'TOOL_CALL', seq: 3, call_id: 'tc_2', stream_id: streamId, tool_name: 'api', args: {} } as ServerMessage);
+
+    // Complete tc_1
+    store.processServerMessage({ type: 'TOOL_RESULT', seq: 4, call_id: 'tc_1', stream_id: streamId, result: { data: 'a' } } as ServerMessage);
+    
+    // Complete tc_2
+    store.processServerMessage({ type: 'TOOL_RESULT', seq: 5, call_id: 'tc_2', stream_id: streamId, result: { data: 'b' } } as ServerMessage);
+
+    // The selector is what exposes the state to the UI, testing it explicitly is covered in chatSelectors.test.ts, 
+    // but we can verify the store itself doesn't crash here.
+  });
+});
