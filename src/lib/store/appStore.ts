@@ -7,10 +7,20 @@ import { ServerMessage } from '@/types/protocol';
 export type TimelineItemRef =
   | { type: 'message'; stream_id: string }
   | { type: 'tool_call'; call_id: string }
-  | { type: 'context_snapshot'; context_id: string; index: number };
+  | { type: 'context_snapshot'; context_id: string; index: number }
+  | { type: 'ping'; seq: number; challenge: string }
+  | { type: 'error'; seq: number; code: string; message: string };
 
 export type StreamSegment =
-  | { kind: 'text'; content: string }
+  | { 
+      kind: 'text'; 
+      content: string;
+      tokenCount: number;
+      firstSeq?: number;
+      lastSeq?: number;
+      startTime?: number;
+      endTime?: number;
+    }
   | { kind: 'tool_call'; call_id: string };
 
 export interface StreamState {
@@ -18,8 +28,6 @@ export interface StreamState {
   role: 'user' | 'agent';
   segments: StreamSegment[];
   isComplete: boolean;
-  seqStart?: number;
-  seqEnd?: number;
 }
 
 export interface ToolCallState {
@@ -42,6 +50,13 @@ export interface ContextSnapshotState {
 
 // ── State Interface ───────────────────────────────────────────────────
 
+export interface TimelineFilter {
+  showTokens: boolean;
+  showToolCalls: boolean;
+  showContexts: boolean;
+  searchQuery: string;
+}
+
 export interface AppState {
   timeline: TimelineItemRef[];
   seqToTimeline: Record<number, TimelineItemRef>;
@@ -52,12 +67,14 @@ export interface AppState {
 
   connectionStatus: ConnectionState;
   lastProcessedSeq: number;
+  timelineFilter: TimelineFilter;
 
   // Actions
   setConnectionStatus: (status: ConnectionState) => void;
   processServerMessage: (msg: ServerMessage) => void;
   sendUserMessage: (content: string, stream_id: string) => void;
   resetChat: () => void;
+  setTimelineFilter: (filter: Partial<TimelineFilter>) => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────
@@ -71,8 +88,15 @@ export const useAppStore = create<AppState>()((set) => ({
   contexts: {},
   connectionStatus: 'idle',
   lastProcessedSeq: 0,
+  timelineFilter: {
+    showTokens: true,
+    showToolCalls: true,
+    showContexts: true,
+    searchQuery: '',
+  },
 
   // Actions
+  setTimelineFilter: (filter) => set((state) => ({ timelineFilter: { ...state.timelineFilter, ...filter } })),
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
   resetChat: () => set({
@@ -88,7 +112,13 @@ export const useAppStore = create<AppState>()((set) => ({
     const newStream: StreamState = {
       stream_id,
       role: 'user',
-      segments: [{ kind: 'text', content }],
+      segments: [{ 
+        kind: 'text', 
+        content,
+        tokenCount: 1,
+        startTime: Date.now(),
+        endTime: Date.now(),
+      }],
       isComplete: true,
     };
 
@@ -99,20 +129,29 @@ export const useAppStore = create<AppState>()((set) => ({
   }),
 
   processServerMessage: (msg: ServerMessage) => set((state) => {
+    // We will selectively clone state properties only when they are modified.
+    // This avoids unnecessary re-renders in components selecting these properties.
     const nextState = { ...state };
-    // Create shallow copies of structures we might mutate
-    nextState.timeline = [...state.timeline];
-    nextState.seqToTimeline = { ...state.seqToTimeline };
-    nextState.streams = { ...state.streams };
-    nextState.toolCalls = { ...state.toolCalls };
-    nextState.contexts = { ...state.contexts };
+    
+    // We don't clone these right away. We clone them just before we mutate them.
+    let timelineCloned = false;
+    let seqToTimelineCloned = false;
+    let streamsCloned = false;
+    let toolCallsCloned = false;
+    let contextsCloned = false;
 
-    // Update global seq tracker
+    const getTimeline = () => { if (!timelineCloned) { nextState.timeline = [...state.timeline]; timelineCloned = true; } return nextState.timeline; };
+    const getSeqToTimeline = () => { if (!seqToTimelineCloned) { nextState.seqToTimeline = { ...state.seqToTimeline }; seqToTimelineCloned = true; } return nextState.seqToTimeline; };
+    const getStreams = () => { if (!streamsCloned) { nextState.streams = { ...state.streams }; streamsCloned = true; } return nextState.streams; };
+    const getToolCalls = () => { if (!toolCallsCloned) { nextState.toolCalls = { ...state.toolCalls }; toolCallsCloned = true; } return nextState.toolCalls; };
+    const getContexts = () => { if (!contextsCloned) { nextState.contexts = { ...state.contexts }; contextsCloned = true; } return nextState.contexts; };
+
     nextState.lastProcessedSeq = Math.max(state.lastProcessedSeq, msg.seq);
 
     switch (msg.type) {
       case 'TOKEN': {
-        let stream = nextState.streams[msg.stream_id];
+        const streams = getStreams();
+        let stream = streams[msg.stream_id];
         let isNewStream = false;
 
         if (!stream) {
@@ -122,42 +161,51 @@ export const useAppStore = create<AppState>()((set) => ({
             role: 'agent',
             segments: [],
             isComplete: false,
-            seqStart: msg.seq,
           };
         } else {
-          // Shallow copy the stream object to mutate
           stream = { ...stream, segments: [...stream.segments] };
         }
 
         const segments = stream.segments;
         if (segments.length > 0 && segments[segments.length - 1].kind === 'text') {
-          // Append to existing text segment
           const lastIndex = segments.length - 1;
-          const lastSeg = segments[lastIndex] as { kind: 'text'; content: string };
-          segments[lastIndex] = { ...lastSeg, content: lastSeg.content + msg.text };
+          const lastSeg = segments[lastIndex];
+          if (lastSeg.kind === 'text') {
+            segments[lastIndex] = { 
+              ...lastSeg, 
+              content: lastSeg.content + msg.text,
+              lastSeq: Math.max(lastSeg.lastSeq ?? 0, msg.seq),
+              tokenCount: lastSeg.tokenCount + 1
+            };
+          }
         } else {
-          // Push new text segment
-          segments.push({ kind: 'text', content: msg.text });
+          segments.push({ 
+            kind: 'text', 
+            content: msg.text,
+            firstSeq: msg.seq,
+            lastSeq: msg.seq,
+            tokenCount: 1,
+            startTime: Date.now(),
+          });
         }
-
-        stream.seqEnd = msg.seq;
-        nextState.streams[msg.stream_id] = stream;
+        
+        getStreams()[msg.stream_id] = stream;
 
         const timelineRef: TimelineItemRef = { type: 'message', stream_id: msg.stream_id };
         if (isNewStream) {
-          nextState.timeline.push(timelineRef);
+          getTimeline().push(timelineRef);
         }
-        nextState.seqToTimeline[msg.seq] = timelineRef;
+        getSeqToTimeline()[msg.seq] = timelineRef;
         break;
       }
 
       case 'TOOL_CALL': {
-        // Idempotency check: ignore if already exists
-        if (nextState.toolCalls[msg.call_id]) {
+        const toolCalls = getToolCalls();
+        if (toolCalls[msg.call_id]) {
           break;
         }
 
-        nextState.toolCalls[msg.call_id] = {
+        toolCalls[msg.call_id] = {
           call_id: msg.call_id,
           tool_name: msg.tool_name,
           args: msg.args,
@@ -167,38 +215,37 @@ export const useAppStore = create<AppState>()((set) => ({
         };
 
         const timelineRef: TimelineItemRef = { type: 'tool_call', call_id: msg.call_id };
-        nextState.timeline.push(timelineRef);
-        nextState.seqToTimeline[msg.seq] = timelineRef;
+        getTimeline().push(timelineRef);
+        getSeqToTimeline()[msg.seq] = timelineRef;
 
-        let stream = nextState.streams[msg.stream_id];
+        const streams = getStreams();
+        let stream = streams[msg.stream_id];
         if (!stream) {
           stream = {
             stream_id: msg.stream_id,
             role: 'agent',
             segments: [],
             isComplete: false,
-            seqStart: msg.seq,
           };
-          nextState.timeline.push({ type: 'message', stream_id: msg.stream_id });
+          getTimeline().push({ type: 'message', stream_id: msg.stream_id });
         }
 
-        nextState.streams[msg.stream_id] = {
+        streams[msg.stream_id] = {
           ...stream,
           segments: [...stream.segments, { kind: 'tool_call', call_id: msg.call_id }],
-          seqEnd: Math.max(stream.seqEnd ?? 0, msg.seq),
         };
         
         break;
       }
 
       case 'TOOL_RESULT': {
-        const existingToolCall = nextState.toolCalls[msg.call_id];
-        // Idempotency check: ignore if already completed or doesn't exist
+        const toolCalls = getToolCalls();
+        const existingToolCall = toolCalls[msg.call_id];
         if (!existingToolCall || existingToolCall.status === 'completed') {
           break;
         }
 
-        nextState.toolCalls[msg.call_id] = {
+        toolCalls[msg.call_id] = {
           ...existingToolCall,
           result: msg.result,
           status: 'completed',
@@ -206,21 +253,15 @@ export const useAppStore = create<AppState>()((set) => ({
         };
 
         const timelineRef: TimelineItemRef = { type: 'tool_call', call_id: msg.call_id };
-        nextState.seqToTimeline[msg.seq] = timelineRef;
+        getSeqToTimeline()[msg.seq] = timelineRef;
 
-        const stream = nextState.streams[msg.stream_id];
-        if (stream) {
-          nextState.streams[msg.stream_id] = {
-            ...stream,
-            seqEnd: Math.max(stream.seqEnd ?? 0, msg.seq),
-          };
-        }
         break;
       }
 
       case 'CONTEXT_SNAPSHOT': {
-        const history = nextState.contexts[msg.context_id]
-          ? [...nextState.contexts[msg.context_id]]
+        const contexts = getContexts();
+        const history = contexts[msg.context_id]
+          ? [...contexts[msg.context_id]]
           : [];
 
         history.push({
@@ -230,37 +271,55 @@ export const useAppStore = create<AppState>()((set) => ({
           timestamp: Date.now(),
         });
 
-        nextState.contexts[msg.context_id] = history;
+        contexts[msg.context_id] = history;
 
         const timelineRef: TimelineItemRef = {
           type: 'context_snapshot',
           context_id: msg.context_id,
           index: history.length - 1,
         };
-        nextState.timeline.push(timelineRef);
-        nextState.seqToTimeline[msg.seq] = timelineRef;
+        getTimeline().push(timelineRef);
+        getSeqToTimeline()[msg.seq] = timelineRef;
         break;
       }
 
       case 'STREAM_END': {
-        const stream = nextState.streams[msg.stream_id];
+        const streams = getStreams();
+        let stream = streams[msg.stream_id];
         if (stream) {
-          nextState.streams[msg.stream_id] = {
-            ...stream,
-            isComplete: true,
-            seqEnd: Math.max(stream.seqEnd ?? 0, msg.seq),
-          };
+          stream = { ...stream, segments: [...stream.segments], isComplete: true };
+          if (stream.segments.length > 0) {
+            const lastIndex = stream.segments.length - 1;
+            const lastSeg = stream.segments[lastIndex];
+            if (lastSeg.kind === 'text') {
+              stream.segments[lastIndex] = {
+                ...lastSeg,
+                lastSeq: Math.max(lastSeg.lastSeq ?? 0, msg.seq),
+                endTime: Date.now(),
+              };
+            }
+          }
+          streams[msg.stream_id] = stream;
           const timelineRef: TimelineItemRef = { type: 'message', stream_id: msg.stream_id };
-          nextState.seqToTimeline[msg.seq] = timelineRef;
+          getSeqToTimeline()[msg.seq] = timelineRef;
         }
         break;
       }
 
-      case 'PING':
-      case 'ERROR':
-        // Not projected into the store for UI rendering
+      case 'PING': {
+        const timelineRef: TimelineItemRef = { type: 'ping', seq: msg.seq, challenge: msg.challenge };
+        getTimeline().push(timelineRef);
+        getSeqToTimeline()[msg.seq] = timelineRef;
         break;
-    }
+      }
+      
+      case 'ERROR': {
+        const timelineRef: TimelineItemRef = { type: 'error', seq: msg.seq, code: msg.code, message: msg.message };
+        getTimeline().push(timelineRef);
+        getSeqToTimeline()[msg.seq] = timelineRef;
+        break;
+      }
+    } // <-- Added missing closing brace
 
     return nextState;
   }),

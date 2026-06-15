@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from './appStore';
 import type { ServerMessage } from '@/types/protocol';
+import { mockStreams } from '../__mocks__/mockStreams';
 
 describe('AppStore', () => {
   beforeEach(() => {
@@ -21,7 +22,7 @@ describe('AppStore', () => {
     let state = useAppStore.getState();
     let stream = state.streams['s1'];
     expect(stream.segments).toHaveLength(1);
-    expect(stream.segments[0]).toEqual({ kind: 'text', content: 'hello' });
+    expect(stream.segments[0]).toEqual(expect.objectContaining({ kind: 'text', content: 'hello' }));
 
     // 2. Append another text token
     store.processServerMessage({
@@ -34,7 +35,7 @@ describe('AppStore', () => {
     state = useAppStore.getState();
     stream = state.streams['s1'];
     expect(stream.segments).toHaveLength(1);
-    expect(stream.segments[0]).toEqual({ kind: 'text', content: 'hello world' });
+    expect(stream.segments[0]).toEqual(expect.objectContaining({ kind: 'text', content: 'hello world' }));
 
     // 3. Interrupt with a TOOL_CALL
     store.processServerMessage({
@@ -62,7 +63,48 @@ describe('AppStore', () => {
     state = useAppStore.getState();
     stream = state.streams['s1'];
     expect(stream.segments).toHaveLength(3);
-    expect(stream.segments[2]).toEqual({ kind: 'text', content: ' found' });
+    expect(stream.segments[2]).toEqual(expect.objectContaining({ kind: 'text', content: ' found' }));
+  });
+
+  it('populates tokenCount, firstSeq, lastSeq, startTime, endTime correctly on TEXT segments (sequenceB)', () => {
+    const store = useAppStore.getState();
+    const messages = mockStreams.sequenceB();
+    
+    for (const msg of messages) {
+      store.processServerMessage(msg);
+    }
+    
+    const state = useAppStore.getState();
+    const stream = state.streams['s1'];
+    
+    expect(stream.segments).toHaveLength(3);
+    
+    // First text segment (Hello world)
+    const seg1 = stream.segments[0];
+    expect(seg1.kind).toBe('text');
+    if (seg1.kind === 'text') {
+      expect(seg1.content).toBe('Hello world');
+      expect(seg1.tokenCount).toBe(2);
+      expect(seg1.firstSeq).toBe(1);
+      expect(seg1.lastSeq).toBe(2);
+      expect(seg1.startTime).toBeTypeOf('number');
+      expect(seg1.endTime).toBeUndefined(); // endTime is only set on STREAM_END
+    }
+    
+    // Tool call segment
+    expect(stream.segments[1].kind).toBe('tool_call');
+    
+    // Second text segment ( I am AI)
+    const seg3 = stream.segments[2];
+    expect(seg3.kind).toBe('text');
+    if (seg3.kind === 'text') {
+      expect(seg3.content).toBe(' I am AI');
+      expect(seg3.tokenCount).toBe(3);
+      expect(seg3.firstSeq).toBe(4);
+      expect(seg3.lastSeq).toBe(7); // Last seq updated by STREAM_END which has seq=7
+      expect(seg3.startTime).toBeTypeOf('number');
+      expect(seg3.endTime).toBeTypeOf('number');
+    }
   });
 
   it('guarantees TOOL_CALL idempotency', () => {

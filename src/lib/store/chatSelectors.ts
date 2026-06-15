@@ -5,6 +5,7 @@ import type { AppState } from './appStore';
 export interface TextChatItem {
   kind: 'text';
   content: string;
+  firstSeq?: number;
 }
 
 export interface ToolCallChatItem {
@@ -52,7 +53,14 @@ export const selectDerivedStreamStatus = (stream_id: string) => (state: AppState
  * This isolates UI components from the normalized state tree and completely
  * abstracts away the `seq` and timeline-reference logic.
  */
+let lastState: AppState | null = null;
+let lastResult: ChatGroup[] = [];
+
 export const selectRenderableChatFeed = (state: AppState): ChatGroup[] => {
+  if (state === lastState) {
+    return lastResult;
+  }
+
   const groups: ChatGroup[] = [];
 
   for (const ref of state.timeline) {
@@ -67,7 +75,7 @@ export const selectRenderableChatFeed = (state: AppState): ChatGroup[] => {
 
     for (const segment of stream.segments) {
       if (segment.kind === 'text') {
-        items.push({ kind: 'text', content: segment.content });
+        items.push({ kind: 'text', content: segment.content, firstSeq: segment.firstSeq });
       } else if (segment.kind === 'tool_call') {
         const toolData = state.toolCalls[segment.call_id];
         if (toolData) {
@@ -91,5 +99,7 @@ export const selectRenderableChatFeed = (state: AppState): ChatGroup[] => {
     });
   }
 
+  lastState = state;
+  lastResult = groups;
   return groups;
 };

@@ -444,6 +444,11 @@ export class ConnectionManager {
     ws.onopen = () => {
       this.log('WebSocket OPEN');
       this.retryCount = 0;
+      this.heartbeatStats = {
+        totalReceived: 0,
+        corruptReceived: 0,
+        pongsSent: 0,
+      };
       this.transition({ type: 'WS_OPEN' });
 
       // If reconnecting, send RESUME with last *delivered* seq.
