@@ -1,0 +1,13 @@
+{
+  "report": "Q3-2025-Financial",
+  "pages": 47,
+  "sections": [
+    "revenue",
+    "operations",
+    "forecast",
+    "risks"
+  ],
+  "last_updated": "2025-10-15T09:30:00Z",
+  "source": "internal-docs/finance/quarterly",
+  "access_level": "confidential"
+}
