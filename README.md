@@ -13,4 +13,5 @@
 <!-- TODO: filled in Phase X -->
 
 ## Chaos Recording Link
-<!-- TODO: filled in Phase X -->
+<!-- The user will add the recording link here after recording the manual chaos test session -->
+[Chaos Test Recording Placeholder](#)
