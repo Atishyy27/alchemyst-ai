@@ -29,7 +29,7 @@ async function run() {
               correctResumeSeq = true;
             }
           } else if (parsed.type === 'PONG') {
-            console.log(`[OUTBOUND] PONG sent echoing challenge: "${parsed.challenge}"`);
+            console.log(`[OUTBOUND] PONG sent echoing challenge: "${parsed.echo}"`);
           }
         } catch (e) {}
         originalSend(data);
@@ -42,7 +42,7 @@ async function run() {
   (cm as any).handleRawMessage = function(data: any) {
     try {
       const parsed = JSON.parse(data.toString());
-      const isCorruptPing = parsed.type === 'PING' && !parsed.challenge;
+      const isCorruptPing = parsed.type === 'PING' && parsed.challenge === '';
       if (isCorruptPing) emptyPings++;
       
       const typeStr = isCorruptPing ? 'PING (EMPTY CHALLENGE)' : parsed.type;
@@ -83,8 +83,8 @@ async function run() {
 
   cm.connect();
   
-  console.log('Running for 60 seconds...');
-  await new Promise(resolve => setTimeout(resolve, 60000));
+  console.log('Running for 120 seconds...');
+  await new Promise(resolve => setTimeout(resolve, 120000));
   
   cm.disconnect();
   
@@ -106,6 +106,19 @@ async function run() {
     console.log('PASS: Delivered seq is always strictly increasing with zero duplicates regardless of raw arrival order');
   } else {
     console.log('FAIL: Delivered seq not strictly increasing');
+  }
+
+  const toolCallsCount = delivered.filter(d => d.type === 'TOOL_CALL').length;
+  const toolResultsCount = delivered.filter(d => d.type === 'TOOL_RESULT').length;
+  const rawToolCallsCount = rawLog.filter(l => l.includes('Type: TOOL_CALL')).length;
+  const rawToolResultsCount = rawLog.filter(l => l.includes('Type: TOOL_RESULT')).length;
+  
+  if (toolCallsCount === 1 && toolResultsCount === 1 && rawToolCallsCount > 1 && rawToolResultsCount > 1) {
+    console.log('PASS: Duplicate TOOL_CALL and TOOL_RESULT replays detected in raw log but delivered exactly once');
+  } else if (toolCallsCount === 1 && toolResultsCount === 1) {
+    console.log('PASS: TOOL_CALL and TOOL_RESULT delivered exactly once (no replays occurred in this run)');
+  } else {
+    console.log(`FAIL: Expected 1 TOOL_CALL and 1 TOOL_RESULT in delivered, but got ${toolCallsCount} and ${toolResultsCount}. Raw replays: ${rawToolCallsCount} / ${rawToolResultsCount}`);
   }
 
   if (disconnects > 0 && reconnects > 0 && resumeSent && correctResumeSeq) {

@@ -1,5 +1,7 @@
 import { ConnectionManager } from '../src/lib/ws/connectionManager';
 import { ServerMessage } from '../src/types/protocol';
+import fs from 'node:fs';
+import path from 'node:path';
 
 async function run() {
   const cm = new ConnectionManager({ url: 'ws://localhost:4747/ws', debug: false });
@@ -9,13 +11,21 @@ async function run() {
   const toolCallTimes = new Map<string, number>();
   const toolAckDeltas = new Map<string, number>();
 
+  const fixturesDir = path.join(process.cwd(), 'src/lib/test/fixtures');
+  if (!fs.existsSync(fixturesDir)) {
+    fs.mkdirSync(fixturesDir, { recursive: true });
+  }
+
   let finalSeq = 0;
 
   cm.onMessage((msg: ServerMessage) => {
     delivered.push({ seq: msg.seq, type: msg.type });
     finalSeq = Math.max(finalSeq, msg.seq);
 
-    if (msg.type === 'TOKEN') {
+    if (msg.type === 'CONTEXT_SNAPSHOT') {
+      const filePath = path.join(fixturesDir, `ctx_${msg.context_id}_${msg.seq}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(msg.data, null, 2), 'utf-8');
+    } else if (msg.type === 'TOKEN') {
       const existing = streams.get(msg.stream_id) || '';
       streams.set(msg.stream_id, existing + msg.text);
     } else if (msg.type === 'TOOL_CALL') {
