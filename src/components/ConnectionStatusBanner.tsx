@@ -14,7 +14,13 @@ export function ConnectionStatusBanner() {
   const connectionStatus = useAppStore((state) => state.connectionStatus);
 
   if (connectionStatus === 'connected' || connectionStatus === 'idle') {
-    return null;
+    return (
+      <div className="absolute top-2 right-4 z-50">
+        <a href="/debug" target="_blank" rel="noreferrer" className="text-xs text-slate-400 hover:text-slate-600 underline">
+          Protocol Debugger
+        </a>
+      </div>
+    );
   }
 
   const label = (() => {
@@ -62,6 +68,9 @@ export function ConnectionStatusBanner() {
         )}
         {label}
       </span>
+      <a href="/debug" target="_blank" rel="noreferrer" className="absolute top-2 right-4 text-xs underline opacity-80 hover:opacity-100">
+        Protocol Debugger
+      </a>
     </div>
   );
 }

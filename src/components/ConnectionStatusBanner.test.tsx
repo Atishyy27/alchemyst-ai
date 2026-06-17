@@ -19,17 +19,17 @@ describe('ConnectionStatusBanner', () => {
     });
   });
 
-  it('renders nothing when connected', () => {
+  it('renders protocol debugger link when connected', () => {
     const { container } = render(<ConnectionStatusBanner />);
-    expect(container.innerHTML).toBe('');
+    expect(container.innerHTML).toContain('Protocol Debugger');
   });
 
-  it('renders nothing when idle', () => {
+  it('renders protocol debugger link when idle', () => {
     act(() => {
       useAppStore.setState({ connectionStatus: 'idle' });
     });
     const { container } = render(<ConnectionStatusBanner />);
-    expect(container.innerHTML).toBe('');
+    expect(container.innerHTML).toContain('Protocol Debugger');
   });
 
   it('shows banner when reconnecting', () => {
