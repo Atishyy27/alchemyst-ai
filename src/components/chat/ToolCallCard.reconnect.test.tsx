@@ -8,6 +8,7 @@ import { ToolCallCard } from './ToolCallCard';
 vi.mock('@/lib/highlightRegistry', () => ({
   highlightRegistry: {
     highlightTimelineToolCall: vi.fn(),
+    registerChatRef: vi.fn(),
   },
 }));
 
@@ -87,5 +88,76 @@ describe('ToolCallCard reconnect state', () => {
     rerender(<ToolCallCard call_id={CALL_ID} />);
     const status = screen.getByTestId(`tool-status-${CALL_ID}`);
     expect(status.textContent).toBe('completed');
+  });
+
+  it('shows reconnecting state when connection drops mid-tool-call', () => {
+    // Render card with call_id in PENDING state
+    act(() => {
+      useAppStore.setState({ connectionStatus: 'connected' });
+    });
+    const { rerender } = render(<ToolCallCard call_id={CALL_ID} />);
+    expect(screen.getByTestId(`tool-status-${CALL_ID}`).textContent).toBe('pending');
+
+    // Simulate connection state -> RECONNECTING
+    act(() => {
+      useAppStore.setState({ connectionStatus: 'reconnecting' });
+    });
+    rerender(<ToolCallCard call_id={CALL_ID} />);
+    
+    // Assert card shows reconnecting indicator (not just pending)
+    expect(screen.getByTestId(`tool-status-${CALL_ID}`).textContent)
+      .toBe('Waiting for result (reconnecting...)');
+
+    // Simulate connection state -> CONNECTED + TOOL_RESULT dispatch
+    act(() => {
+      useAppStore.getState().processServerMessage({
+        type: 'TOOL_RESULT',
+        seq: 10,
+        call_id: CALL_ID,
+        result: { rows: 42 },
+        stream_id: 's_test',
+      });
+      useAppStore.setState({ connectionStatus: 'connected' });
+    });
+    rerender(<ToolCallCard call_id={CALL_ID} />);
+
+    // Assert card shows COMPLETED
+    expect(screen.getByTestId(`tool-status-${CALL_ID}`).textContent).toBe('completed');
+  });
+
+  it('card remains in DOM with correct call_id during full reconnect cycle', () => {
+    // Render card
+    act(() => {
+      useAppStore.setState({ connectionStatus: 'connected' });
+    });
+    const { rerender, container } = render(<ToolCallCard call_id={CALL_ID} />);
+    
+    // It should exist
+    expect(screen.getByTestId(`tool-call-${CALL_ID}`)).toBeDefined();
+
+    // Disconnect
+    act(() => {
+      useAppStore.setState({ connectionStatus: 'reconnecting' });
+    });
+    rerender(<ToolCallCard call_id={CALL_ID} />);
+    
+    // It should STILL exist
+    expect(screen.getByTestId(`tool-call-${CALL_ID}`)).toBeDefined();
+
+    // Reconnect + Result
+    act(() => {
+      useAppStore.getState().processServerMessage({
+        type: 'TOOL_RESULT',
+        seq: 10,
+        call_id: CALL_ID,
+        result: { success: true },
+        stream_id: 's_test',
+      });
+      useAppStore.setState({ connectionStatus: 'connected' });
+    });
+    rerender(<ToolCallCard call_id={CALL_ID} />);
+
+    // It should STILL exist
+    expect(screen.getByTestId(`tool-call-${CALL_ID}`)).toBeDefined();
   });
 });

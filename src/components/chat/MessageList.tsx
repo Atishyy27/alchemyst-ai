@@ -19,15 +19,15 @@ export function MessageList() {
           key={group.stream_id} 
           className={`flex flex-col ${group.role === 'user' ? 'items-end' : 'items-start'}`}
         >
-          <div className="text-xs text-gray-500 mb-1 px-1 capitalize tracking-wide font-medium">
+          <div className="text-[11px] text-slate-400 mb-1.5 uppercase tracking-wider font-semibold">
             {group.role}
           </div>
-          <div className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${
+          <div className={`w-full ${
             group.role === 'user' 
-              ? 'bg-blue-600 text-white rounded-br-sm' 
-              : 'bg-white border border-gray-100 rounded-bl-sm text-gray-800'
+              ? 'text-slate-800' 
+              : 'text-slate-700'
           }`}>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {group.items.map((item, i) => {
                 if (item.kind === 'text') {
                   return <StreamingText key={i} content={item.content} firstSeq={item.firstSeq} />;
@@ -39,10 +39,10 @@ export function MessageList() {
             </div>
             
             {group.role === 'agent' && group.status !== 'ended' && (
-              <div className="mt-2 flex items-center space-x-1">
-                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div className="mt-3 flex items-center space-x-1.5 opacity-50">
+                <div className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             )}
           </div>

@@ -10,7 +10,7 @@ export function StreamingText({ content, firstSeq }: StreamingTextProps) {
   // Renders the text content. We can replace this with a full markdown renderer later.
   return (
     <div 
-      className="block flex-none transition-colors duration-300 whitespace-pre-wrap font-sans text-[15px] leading-relaxed data-[highlighted=true]:bg-yellow-200"
+      className="block flex-none transition-colors duration-300 whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-slate-800 data-[highlighted=true]:bg-yellow-100 rounded px-1 -mx-1"
       ref={el => {
         if (firstSeq) {
           highlightRegistry.registerChatRef(`chat_seq_${firstSeq}`, el);

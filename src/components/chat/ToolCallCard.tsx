@@ -31,46 +31,63 @@ export function ToolCallCard({ call_id }: ToolCallCardProps) {
     : toolCall.status;
 
   const statusClasses = toolCall.status === 'completed'
-    ? 'bg-green-100 text-green-800'
+    ? 'text-emerald-600'
     : isWaitingOnReconnect
-      ? 'bg-orange-100 text-orange-800 animate-pulse'
-      : 'bg-yellow-100 text-yellow-800 animate-pulse';
+      ? 'text-amber-500 animate-pulse'
+      : 'text-blue-500 animate-pulse';
+
+  const statusIcon = toolCall.status === 'completed'
+    ? (
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+      </svg>
+    ) : (
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+    );
 
   return (
     <div 
       data-testid={`tool-call-${call_id}`} 
-      className="border border-gray-200 rounded-md p-3 my-2 text-sm bg-gray-50 shadow-sm cursor-pointer transition-colors duration-300 hover:border-blue-300"
+      ref={el => highlightRegistry.registerChatRef(`chat_tool_${call_id}`, el)}
+      className="border border-slate-200 rounded-lg my-1.5 text-sm bg-white shadow-sm cursor-pointer transition-all duration-200 hover:border-slate-300 hover:shadow"
       onClick={handleHighlight}
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold font-mono text-blue-600">
+      <div className="flex items-center gap-2 p-2.5 bg-slate-50 border-b border-slate-100 rounded-t-lg">
+        <div className={statusClasses}>
+          {statusIcon}
+        </div>
+        <span className="font-medium font-mono text-[12px] text-slate-700">
           {toolCall.tool_name}()
         </span>
         <span
           data-testid={`tool-status-${call_id}`}
-          className={`text-xs px-2 py-1 rounded-full ${statusClasses}`}
+          className={`text-[10px] uppercase font-bold tracking-wider ml-auto ${statusClasses}`}
         >
           {statusLabel}
         </span>
       </div>
       
-      <details className="mt-1" open={toolCall.status === 'pending'}>
-        <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 font-medium">
+      <details className="group" open={toolCall.status === 'pending'}>
+        <summary className="text-[11px] text-slate-500 cursor-pointer hover:text-slate-700 font-medium px-3 py-2 bg-white list-none flex items-center gap-1 border-b border-transparent group-open:border-slate-100">
+          <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
           Arguments
         </summary>
-        <pre className="mt-1 p-2 bg-white rounded border overflow-x-auto text-xs text-gray-700 font-mono">
+        <div className="p-3 bg-white text-[11px] text-slate-600 font-mono overflow-x-auto">
           {JSON.stringify(toolCall.args, null, 2)}
-        </pre>
+        </div>
       </details>
 
       {toolCall.status === 'completed' && toolCall.result && (
-        <details className="mt-1">
-          <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 font-medium">
+        <details className="group border-t border-slate-100">
+          <summary className="text-[11px] text-slate-500 cursor-pointer hover:text-slate-700 font-medium px-3 py-2 bg-white list-none flex items-center gap-1 border-b border-transparent group-open:border-slate-100">
+            <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             Result
           </summary>
-          <pre className="mt-1 p-2 bg-white rounded border overflow-x-auto text-xs text-gray-700 font-mono">
+          <div className="p-3 bg-white text-[11px] text-slate-600 font-mono overflow-x-auto rounded-b-lg">
             {JSON.stringify(toolCall.result, null, 2)}
-          </pre>
+          </div>
         </details>
       )}
     </div>

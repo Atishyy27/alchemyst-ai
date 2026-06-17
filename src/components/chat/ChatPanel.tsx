@@ -3,11 +3,6 @@ import { useAppStore } from '@/lib/store/appStore';
 import { MessageList } from './MessageList';
 
 interface ChatPanelProps {
-  /**
-   * Callback to actually send the message over the network.
-   * The UI layer doesn't own the ConnectionManager, so the parent
-   * must bridge the store update and the network call.
-   */
   onSendMessage: (content: string) => void;
 }
 
@@ -23,39 +18,47 @@ export function ChatPanel({ onSendMessage }: ChatPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 font-sans border-r border-gray-200">
-      <div className="flex items-center justify-between p-4 bg-white border-b shadow-sm z-10">
-        <h2 className="font-semibold text-gray-800 tracking-tight">Agent Console</h2>
+    <div className="flex flex-col h-full bg-white font-sans w-full">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 h-12 bg-white border-b border-slate-200 shrink-0">
+        <h2 className="font-semibold text-slate-800 text-[13px] tracking-tight">Agent Console</h2>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 uppercase font-medium tracking-wider">
+          <span className="text-[10px] text-slate-500 font-mono uppercase tracking-wider font-semibold">
             {connectionStatus}
           </span>
           <span className={`w-2 h-2 rounded-full ${
-            connectionStatus === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' :
-            connectionStatus === 'reconnecting' ? 'bg-yellow-500 animate-pulse' :
-            'bg-red-500'
+            connectionStatus === 'connected' ? 'bg-emerald-500' :
+            connectionStatus === 'reconnecting' ? 'bg-amber-500 animate-pulse' :
+            'bg-rose-500'
           }`} />
         </div>
       </div>
 
       <MessageList />
 
-      <div className="p-4 bg-white border-t border-gray-200">
-        <form onSubmit={handleSubmit} className="flex gap-2 max-w-4xl mx-auto w-full relative">
+      {/* Input Area */}
+      <div className="p-4 bg-slate-50 border-t border-slate-200 shrink-0">
+        <form onSubmit={handleSubmit} className="flex gap-2 max-w-4xl mx-auto w-full relative items-center bg-white border border-slate-200 rounded text-[13px] shadow-sm focus-within:ring-1 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all overflow-hidden">
+          <div className="pl-3 pr-2 text-slate-400 font-mono text-[13px] select-none">
+            &gt;
+          </div>
           <input
-            className="flex-1 pl-4 pr-12 py-3 bg-gray-100 border-transparent rounded-full focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            placeholder={connectionStatus === 'connected' ? "Message the agent..." : "Waiting for connection..."}
+            className="flex-1 py-2.5 bg-transparent text-slate-800 font-mono placeholder-slate-400 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder={connectionStatus === 'connected' ? "Execute command or send message..." : "Waiting for connection..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={connectionStatus !== 'connected'}
+            autoFocus
           />
-          <button 
-            type="submit"
-            disabled={!input.trim() || connectionStatus !== 'connected'}
-            className="absolute right-1 top-1 bottom-1 px-5 bg-blue-600 text-white font-medium rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            Send
-          </button>
+          <div className="pr-1.5 flex items-center">
+            <button 
+              type="submit"
+              disabled={!input.trim() || connectionStatus !== 'connected'}
+              className="px-3 py-1.5 bg-slate-800 text-white text-[11px] font-semibold uppercase tracking-wider rounded hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Run
+            </button>
+          </div>
         </form>
       </div>
     </div>
