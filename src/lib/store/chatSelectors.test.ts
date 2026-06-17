@@ -9,7 +9,7 @@ describe('chatSelectors', () => {
         { type: 'message', stream_id: 'usr1' },
         { type: 'message', stream_id: 's1' },
         { type: 'tool_call', call_id: 'tc1' }, // Raw timeline might interleave tool calls
-        { type: 'context_snapshot', context_id: 'ctx1', index: 0 }, // Ignored by chat feed
+        { type: 'context_snapshot', context_id: 'ctx1', seq: 0 }, // Ignored by chat feed
       ],
       streams: {
         'usr1': {

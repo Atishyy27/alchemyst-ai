@@ -222,4 +222,102 @@ describe('AppStore', () => {
     // The selector is what exposes the state to the UI, testing it explicitly is covered in chatSelectors.test.ts, 
     // but we can verify the store itself doesn't crash here.
   });
+
+  describe('Edge Cases (Hostile Server)', () => {
+    it('Duplicate TOOL_RESULT: ignores duplicate result for the same call_id', () => {
+      const store = useAppStore.getState();
+
+      store.processServerMessage({ type: 'TOOL_CALL', stream_id: 's1', seq: 1, call_id: 'tc1', tool_name: 'test', args: {} } as ServerMessage);
+      store.processServerMessage({ type: 'TOOL_RESULT', call_id: 'tc1', seq: 2, result: 'result1' } as ServerMessage);
+
+      let state = useAppStore.getState();
+      expect(state.toolCalls['tc1'].status).toBe('completed');
+      expect(state.toolCalls['tc1'].result).toBe('result1');
+
+      // Duplicate result
+      store.processServerMessage({ type: 'TOOL_RESULT', call_id: 'tc1', seq: 3, result: 'result2' } as ServerMessage);
+
+      state = useAppStore.getState();
+      expect(state.toolCalls['tc1'].result).toBe('result1');
+    });
+
+    it('Duplicate STREAM_END: closes stream once and ignores subsequent STREAM_ENDs', () => {
+      const store = useAppStore.getState();
+
+      store.processServerMessage({ type: 'TOKEN', stream_id: 's1', seq: 1, text: 'hi' } as ServerMessage);
+      store.processServerMessage({ type: 'STREAM_END', stream_id: 's1', seq: 2 } as ServerMessage);
+
+      let state = useAppStore.getState();
+      expect(state.streams['s1'].isComplete).toBe(true);
+      const firstEndTime = state.streams['s1'].segments[0].endTime;
+      expect(firstEndTime).toBeTypeOf('number');
+
+      // Duplicate
+      store.processServerMessage({ type: 'STREAM_END', stream_id: 's1', seq: 3 } as ServerMessage);
+
+      state = useAppStore.getState();
+      expect(state.streams['s1'].segments[0].endTime).toBe(firstEndTime);
+    });
+
+    it('Unknown TOOL_RESULT: ignores result for unknown call_id without crashing', () => {
+      const store = useAppStore.getState();
+
+      expect(() => {
+        store.processServerMessage({ type: 'TOOL_RESULT', call_id: 'does-not-exist', seq: 1, result: 'data' } as ServerMessage);
+      }).not.toThrow();
+
+      const state = useAppStore.getState();
+      expect(state.toolCalls['does-not-exist']).toBeUndefined();
+    });
+
+    it('Unknown STREAM_END: ignores STREAM_END for ghost stream without crashing', () => {
+      const store = useAppStore.getState();
+
+      // Setup some existing state
+      store.processServerMessage({ type: 'TOKEN', stream_id: 'real-stream', seq: 1, text: 'hello' } as ServerMessage);
+      const preState = useAppStore.getState();
+      const preTimelineLength = preState.timeline.length;
+      const preStreamsCount = Object.keys(preState.streams).length;
+
+      expect(() => {
+        store.processServerMessage({ type: 'STREAM_END', stream_id: 'ghost', seq: 2 } as ServerMessage);
+      }).not.toThrow();
+
+      const state = useAppStore.getState();
+      
+      // Asserts that the ghost stream was not created
+      expect(state.streams['ghost']).toBeUndefined();
+      
+      // Asserts that the timeline was untouched
+      expect(state.timeline).toHaveLength(preTimelineLength);
+      
+      // Asserts that other streams were untouched
+      expect(Object.keys(state.streams)).toHaveLength(preStreamsCount);
+      expect(state.streams['real-stream']).toEqual(preState.streams['real-stream']);
+    });
+
+    it('Reconnect during tool call: duplicate TOOL_CALL uses same card, TOOL_RESULT updates it', () => {
+      const store = useAppStore.getState();
+
+      // Original TOOL_CALL
+      store.processServerMessage({ type: 'TOOL_CALL', stream_id: 's1', seq: 1, call_id: 'tc1', tool_name: 'test', args: {} } as ServerMessage);
+
+      let state = useAppStore.getState();
+      expect(state.timeline.filter(t => t.type === 'tool_call')).toHaveLength(1);
+
+      // Duplicate TOOL_CALL (simulating replay on reconnect)
+      store.processServerMessage({ type: 'TOOL_CALL', stream_id: 's1', seq: 2, call_id: 'tc1', tool_name: 'test', args: {} } as ServerMessage);
+
+      state = useAppStore.getState();
+      // Should not push another timeline entry
+      expect(state.timeline.filter(t => t.type === 'tool_call')).toHaveLength(1);
+      
+      // TOOL_RESULT arrives
+      store.processServerMessage({ type: 'TOOL_RESULT', call_id: 'tc1', seq: 3, result: 'done' } as ServerMessage);
+
+      state = useAppStore.getState();
+      expect(state.timeline.filter(t => t.type === 'tool_call')).toHaveLength(1);
+      expect(state.toolCalls['tc1'].status).toBe('completed');
+    });
+  });
 });

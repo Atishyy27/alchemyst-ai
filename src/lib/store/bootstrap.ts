@@ -25,18 +25,23 @@ export function initializeAgentConsole(cm: ConnectionManager): () => void {
   const unsubMessage = cm.onMessage((msg) => {
     // 1. Pure state update
     useAppStore.getState().processServerMessage(msg);
+  });
 
-    // 2. Protocol side effect: ACK tool calls
-    if (msg.type === 'TOOL_CALL') {
-      cm.send({
-        type: 'TOOL_ACK',
-        call_id: msg.call_id,
-      });
+  // Track client protocol actions in the timeline
+  const unsubDebug = cm.onDebugEvent((event) => {
+    const state = useAppStore.getState();
+    if (event.kind === 'heartbeat_sent') {
+      state.addClientTimelineEvent({ type: 'pong', challenge: event.challenge, timestamp: event.timestamp });
+    } else if (event.kind === 'resume_sent') {
+      state.addClientTimelineEvent({ type: 'resume', last_seq: event.last_seq, timestamp: event.timestamp });
+    } else if (event.kind === 'tool_ack_sent') {
+      state.addClientTimelineEvent({ type: 'tool_ack', call_id: event.call_id, timestamp: event.timestamp });
     }
   });
 
   return () => {
     unsubState();
     unsubMessage();
+    unsubDebug();
   };
 }

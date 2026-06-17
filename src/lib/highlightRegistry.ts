@@ -4,7 +4,7 @@ import { useAppStore } from '@/lib/store/appStore';
 
 class HighlightRegistry {
   private highlightSubscribers = new Set<() => void>();
-  public listRef: any | null = null;
+  public listRef: { scrollToRow: (args: { index: number; align: string }) => void } | null = null;
   private chatRefs = new Map<string, HTMLElement>();
   private timelineNodeRefs = new Map<string, HTMLElement>();
 
@@ -26,6 +26,17 @@ class HighlightRegistry {
 
   highlightChatText(firstSeq: number) {
     const el = this.chatRefs.get(`chat_seq_${firstSeq}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.setAttribute('data-highlighted', 'true');
+      setTimeout(() => {
+        el.removeAttribute('data-highlighted');
+      }, 2000);
+    }
+  }
+
+  highlightChatToolCall(callId: string) {
+    const el = this.chatRefs.get(`chat_tool_${callId}`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.setAttribute('data-highlighted', 'true');

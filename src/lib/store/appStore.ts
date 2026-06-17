@@ -7,9 +7,12 @@ import { ServerMessage } from '@/types/protocol';
 export type TimelineItemRef =
   | { type: 'message'; stream_id: string }
   | { type: 'tool_call'; call_id: string }
-  | { type: 'context_snapshot'; context_id: string; index: number }
+  | { type: 'context_snapshot'; context_id: string; seq: number }
   | { type: 'ping'; seq: number; challenge: string }
-  | { type: 'error'; seq: number; code: string; message: string };
+  | { type: 'error'; seq: number; code: string; message: string }
+  | { type: 'pong'; challenge: string; timestamp: number }
+  | { type: 'resume'; last_seq: number; timestamp: number }
+  | { type: 'tool_ack'; call_id: string; timestamp: number };
 
 export type StreamSegment =
   | { 
@@ -54,6 +57,8 @@ export interface TimelineFilter {
   showTokens: boolean;
   showToolCalls: boolean;
   showContexts: boolean;
+  showPingsPongs: boolean;
+  showErrors: boolean;
   searchQuery: string;
 }
 
@@ -75,6 +80,7 @@ export interface AppState {
   sendUserMessage: (content: string, stream_id: string) => void;
   resetChat: () => void;
   setTimelineFilter: (filter: Partial<TimelineFilter>) => void;
+  addClientTimelineEvent: (event: TimelineItemRef) => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────
@@ -92,6 +98,8 @@ export const useAppStore = create<AppState>()((set) => ({
     showTokens: true,
     showToolCalls: true,
     showContexts: true,
+    showPingsPongs: true,
+    showErrors: true,
     searchQuery: '',
   },
 
@@ -106,6 +114,13 @@ export const useAppStore = create<AppState>()((set) => ({
     toolCalls: {},
     contexts: {},
     lastProcessedSeq: 0,
+  }),
+
+  addClientTimelineEvent: (event) => set((state) => {
+    const updated = [...state.timeline, event];
+    return {
+      timeline: updated.length > 5000 ? updated.slice(-5000) : updated
+    };
   }),
 
   sendUserMessage: (content, stream_id) => set((state) => {
@@ -123,8 +138,11 @@ export const useAppStore = create<AppState>()((set) => ({
     };
 
     return {
-      streams: { ...state.streams, [stream_id]: newStream },
-      timeline: [...state.timeline, { type: 'message', stream_id }],
+      streams: { [stream_id]: newStream },
+      toolCalls: {},
+      timeline: [{ type: 'message', stream_id }],
+      seqToTimeline: {},
+      lastProcessedSeq: 0,
     };
   }),
 
@@ -171,6 +189,9 @@ export const useAppStore = create<AppState>()((set) => ({
           const lastIndex = segments.length - 1;
           const lastSeg = segments[lastIndex];
           if (lastSeg.kind === 'text') {
+            if (msg.seq <= (lastSeg.lastSeq ?? 0)) {
+              break;
+            }
             segments[lastIndex] = { 
               ...lastSeg, 
               content: lastSeg.content + msg.text,
@@ -276,10 +297,16 @@ export const useAppStore = create<AppState>()((set) => ({
         const timelineRef: TimelineItemRef = {
           type: 'context_snapshot',
           context_id: msg.context_id,
-          index: history.length - 1,
+          seq: msg.seq,
         };
         getTimeline().push(timelineRef);
         getSeqToTimeline()[msg.seq] = timelineRef;
+        
+        // Cap snapshot history per context to 20
+        const MAX_SNAPSHOTS_PER_CONTEXT = 20;
+        contexts[msg.context_id] = history.length > MAX_SNAPSHOTS_PER_CONTEXT 
+          ? history.slice(-MAX_SNAPSHOTS_PER_CONTEXT) 
+          : history;
         break;
       }
 
@@ -287,6 +314,7 @@ export const useAppStore = create<AppState>()((set) => ({
         const streams = getStreams();
         let stream = streams[msg.stream_id];
         if (stream) {
+          if (stream.isComplete) break;
           stream = { ...stream, segments: [...stream.segments], isComplete: true };
           if (stream.segments.length > 0) {
             const lastIndex = stream.segments.length - 1;
@@ -320,6 +348,10 @@ export const useAppStore = create<AppState>()((set) => ({
         break;
       }
     } // <-- Added missing closing brace
+
+    if (nextState.timeline && nextState.timeline.length > 5000) {
+      nextState.timeline = nextState.timeline.slice(-5000);
+    }
 
     return nextState;
   }),

@@ -27,6 +27,9 @@ describe('Store Bootstrap', () => {
         triggerMessage = fn;
         return () => {};
       },
+      onDebugEvent: () => {
+        return () => {};
+      },
       send: vi.fn(),
     } as unknown as ConnectionManager;
 
@@ -52,7 +55,7 @@ describe('Store Bootstrap', () => {
     expect(useAppStore.getState().streams['s1']).toBeDefined();
     expect(mockCm.send).not.toHaveBeenCalled(); // No ACK for TOKEN
 
-    // 3. Verify TOOL_CALL triggers an ACK side-effect
+    // 3. Verify TOOL_CALL updates the store
     const toolMsg: ServerMessage = {
       type: 'TOOL_CALL',
       stream_id: 's1',
@@ -65,10 +68,7 @@ describe('Store Bootstrap', () => {
 
     expect(useAppStore.getState().toolCalls['tc_1']).toBeDefined();
     
-    // The side-effect must have occurred
-    expect(mockCm.send).toHaveBeenCalledWith({
-      type: 'TOOL_ACK',
-      call_id: 'tc_1',
-    });
+    // The side-effect was moved to connectionManager.ts, so no send here.
+    expect(mockCm.send).not.toHaveBeenCalled();
   });
 });
