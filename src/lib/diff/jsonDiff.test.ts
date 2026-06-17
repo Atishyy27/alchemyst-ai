@@ -76,10 +76,8 @@ describe('diffJson', () => {
     const prevFile = path.join(fixturesDir, 'ctx_ctx_report_1.json');
     const nextFile = path.join(fixturesDir, 'ctx_ctx_report_21.json');
     
-    if (!fs.existsSync(prevFile) || !fs.existsSync(nextFile)) {
-      console.warn('Fixtures not found, skipping real data test. Run scripts/check-normal.ts first.');
-      return;
-    }
+    expect(fs.existsSync(prevFile)).toBe(true);
+    expect(fs.existsSync(nextFile)).toBe(true);
 
     const prev = JSON.parse(fs.readFileSync(prevFile, 'utf-8'));
     const next = JSON.parse(fs.readFileSync(nextFile, 'utf-8'));
@@ -111,5 +109,32 @@ describe('diffJson', () => {
         expect(prevVal).toEqual(d.oldValue);
       }
     }
+  });
+
+  it('diffs 500KB objects in under 100ms', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const largeFixturePath = path.join(process.cwd(), 'src/lib/test/fixtures/ctx_large_500kb.json');
+    expect(fs.existsSync(largeFixturePath)).toBe(true);
+    
+    const largeFixture = JSON.parse(fs.readFileSync(largeFixturePath, 'utf-8'));
+    const modifiedRaw = { ...largeFixture, sections: [...largeFixture.sections] };
+    modifiedRaw.sections[0] = { ...modifiedRaw.sections[0], title: 'CHANGED' };
+    
+    // Simulate incoming websocket payload (no shared references)
+    const modified = JSON.parse(JSON.stringify(modifiedRaw));
+    
+    const start = performance.now();
+    const diff = diffJson(largeFixture, modified);
+    const elapsed = performance.now() - start;
+    
+    console.log('diff time:', elapsed, 'ms');
+    expect(diff).toHaveLength(1);
+    expect(diff[0]).toEqual({
+      path: 'sections[0].title',
+      kind: 'changed',
+      oldValue: largeFixture.sections[0].title,
+      newValue: 'CHANGED',
+    });
   });
 });

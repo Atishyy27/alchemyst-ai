@@ -25,10 +25,10 @@ describe('ContextPanel', () => {
 
     expect(screen.getByText(/"a":/)).toBeInTheDocument();
     
-    const aNode = screen.getByText(/"a":/).parentElement;
-    expect(aNode).not.toHaveClass('bg-green-100/50');
-    expect(aNode).not.toHaveClass('bg-yellow-100/50');
-    expect(aNode).not.toHaveClass('bg-red-100/50');
+    const aNode = screen.getByText(/"a":/).parentElement?.parentElement;
+    expect(aNode).not.toHaveClass('bg-emerald-500/15');
+    expect(aNode).not.toHaveClass('bg-amber-500/15');
+    expect(aNode).not.toHaveClass('bg-rose-500/15');
 
     act(() => {
       useAppStore.getState().processServerMessage({
@@ -39,15 +39,15 @@ describe('ContextPanel', () => {
       });
     });
 
-    const newA = screen.getByText(/"a":/).parentElement;
-    expect(newA).toHaveClass('bg-yellow-100/50');
+    const newA = screen.getByText(/"a":/).parentElement?.parentElement;
+    expect(newA).toHaveClass('bg-amber-500/15');
 
-    const bNode = screen.getByText(/"b":/).parentElement;
-    expect(bNode).toHaveClass('bg-red-100/50');
+    const bNode = screen.getByText(/"b":/).parentElement?.parentElement;
+    expect(bNode).toHaveClass('bg-rose-500/15');
     expect(bNode).toHaveClass('line-through');
 
-    const cNode = screen.getByText(/"c":/).parentElement;
-    expect(cNode).toHaveClass('bg-green-100/50');
+    const cNode = screen.getByText(/"c":/).parentElement?.parentElement;
+    expect(cNode).toHaveClass('bg-emerald-500/15');
   });
 
   it('steps through 3 synthetic snapshots and shows correct diffs', () => {
@@ -86,27 +86,27 @@ describe('ContextPanel', () => {
     const slider = screen.getByTestId('context-slider') as HTMLInputElement;
 
     // By default, it's at step 3 (index 2), comparing index 1 vs 2
-    let stepNode = screen.getByText(/"step":/).parentElement;
-    expect(stepNode).toHaveClass('bg-yellow-100/50'); // changed
-    let addedNode = screen.getByText(/"added":/).parentElement;
-    expect(addedNode).toHaveClass('bg-red-100/50'); // removed
+    let stepNode = screen.getByText(/"step":/).parentElement?.parentElement;
+    expect(stepNode).toHaveClass('bg-amber-500/15'); // changed
+    let addedNode = screen.getByText(/"added":/).parentElement?.parentElement;
+    expect(addedNode).toHaveClass('bg-rose-500/15'); // removed
 
     // Step to index 0
     fireEvent.change(slider, { target: { value: '0' } });
     
     // index 0: { step: 1 } vs nothing (no diff)
-    stepNode = screen.getByText(/"step":/).parentElement;
-    expect(stepNode).not.toHaveClass('bg-yellow-100/50');
+    stepNode = screen.getByText(/"step":/).parentElement?.parentElement;
+    expect(stepNode).not.toHaveClass('bg-amber-500/15');
     expect(screen.queryByText(/"added":/)).not.toBeInTheDocument();
 
     // Step to index 1
     fireEvent.change(slider, { target: { value: '1' } });
     
     // index 1 vs 0
-    stepNode = screen.getByText(/"step":/).parentElement;
-    expect(stepNode).toHaveClass('bg-yellow-100/50');
-    addedNode = screen.getByText(/"added":/).parentElement;
-    expect(addedNode).toHaveClass('bg-green-100/50'); // added
+    stepNode = screen.getByText(/"step":/).parentElement?.parentElement;
+    expect(stepNode).toHaveClass('bg-amber-500/15');
+    addedNode = screen.getByText(/"added":/).parentElement?.parentElement;
+    expect(addedNode).toHaveClass('bg-emerald-500/15'); // added
   });
 });
 

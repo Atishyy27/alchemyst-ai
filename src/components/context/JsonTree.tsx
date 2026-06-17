@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { DiffEntry } from '../../lib/diff/jsonDiff';
 
 interface JsonTreeProps {
-  data: any;
+  data: unknown;
   depth?: number;
   name?: string;
   isLast?: boolean;
@@ -34,32 +34,6 @@ const getKey = (path: string) => {
   return path;
 };
 
-const cheapSizeEstimate = (obj: any, limit: number = 50000): number => {
-  let size = 0;
-  const queue = [obj];
-  while (queue.length > 0 && size < limit) {
-    const current = queue.pop();
-    if (typeof current === 'string') size += current.length * 2;
-    else if (typeof current === 'number') size += 8;
-    else if (typeof current === 'boolean') size += 4;
-    else if (current === null || current === undefined) size += 4;
-    else if (Array.isArray(current)) {
-      size += 20;
-      for (let i = 0; i < current.length; i++) {
-        queue.push(current[i]);
-      }
-    } else if (typeof current === 'object') {
-      size += 20;
-      for (const key in current) {
-        if (Object.prototype.hasOwnProperty.call(current, key)) {
-          size += key.length * 2;
-          queue.push(current[key]);
-        }
-      }
-    }
-  }
-  return size;
-};
 
 export function JsonTree({ data, depth = 0, name, isLast = true, diffs = [], currentPath = '' }: JsonTreeProps) {
   const isObject = typeof data === 'object' && data !== null && !Array.isArray(data);
@@ -70,8 +44,7 @@ export function JsonTree({ data, depth = 0, name, isLast = true, diffs = [], cur
     if (!isComplex) return false;
     const childCount = isArray ? data.length : Object.keys(data).length;
     if (childCount > 50) return false;
-    if (cheapSizeEstimate(data) > 25000) return false;
-    return depth <= 2;
+    return depth === 0;
   });
 
   const [expanded, setExpanded] = useState(initialExpanded);
@@ -82,12 +55,20 @@ export function JsonTree({ data, depth = 0, name, isLast = true, diffs = [], cur
   const myDiff = diffs.find(d => d.path === currentPath && currentPath !== '');
   let bgColorClass = '';
   let lineThrough = false;
+  let prefix = <span className="inline-block w-4 text-center mr-1 text-transparent select-none"> </span>;
 
   if (myDiff) {
-    if (myDiff.kind === 'added') bgColorClass = 'bg-green-100/50';
-    if (myDiff.kind === 'changed') bgColorClass = 'bg-yellow-100/50';
+    if (myDiff.kind === 'added') {
+      bgColorClass = 'bg-emerald-500/15 text-emerald-900 rounded-sm -ml-5 pl-5 pr-1 my-0.5';
+      prefix = <span className="inline-block w-4 text-center mr-1 text-emerald-600 font-bold select-none -ml-4">+</span>;
+    }
+    if (myDiff.kind === 'changed') {
+      bgColorClass = 'bg-amber-500/15 text-amber-900 rounded-sm -ml-5 pl-5 pr-1 my-0.5';
+      prefix = <span className="inline-block w-4 text-center mr-1 text-amber-600 font-bold select-none -ml-4">~</span>;
+    }
     if (myDiff.kind === 'removed') {
-      bgColorClass = 'bg-red-100/50 text-red-600 line-through';
+      bgColorClass = 'bg-rose-500/15 text-rose-800 line-through rounded-sm -ml-5 pl-5 pr-1 my-0.5 opacity-80';
+      prefix = <span className="inline-block w-4 text-center mr-1 text-rose-600 font-bold select-none no-underline -ml-4">-</span>;
       lineThrough = true;
     }
   }
@@ -100,31 +81,34 @@ export function JsonTree({ data, depth = 0, name, isLast = true, diffs = [], cur
     } else if (typeof data === 'boolean') {
       valueColor = lineThrough ? '' : 'text-purple-600';
     } else if (data === null) {
-      valueColor = lineThrough ? '' : 'text-gray-500';
+      valueColor = lineThrough ? '' : 'text-slate-500';
       displayValue = 'null';
     } else if (data === undefined) {
-      valueColor = lineThrough ? '' : 'text-gray-500';
+      valueColor = lineThrough ? '' : 'text-slate-500';
       displayValue = 'undefined';
     } else if (typeof data === 'string') {
       displayValue = `"${data}"`;
     }
 
     return (
-      <div className={`flex font-mono text-xs whitespace-pre rounded px-1 w-fit ${bgColorClass} ${lineThrough ? 'text-red-500 line-through' : ''}`}>
-        {name && <span className="text-gray-700 mr-1">"{name}":</span>}
-        <span className={valueColor}>{displayValue}</span>
-        {!isLast && <span className="text-gray-600">,</span>}
+      <div className={`flex font-mono text-[12px] leading-5 whitespace-pre rounded px-1 w-full ${bgColorClass} ${lineThrough ? 'text-red-500 line-through' : ''}`}>
+        {prefix}
+        <div className="flex">
+          {name && <span className="text-slate-700 mr-1">"{name}":</span>}
+          <span className={valueColor}>{displayValue}</span>
+          {!isLast && <span className="text-slate-500">,</span>}
+        </div>
       </div>
     );
   }
 
-  let children: { key: string, val: any, childPath: string, isRemoved: boolean }[] = [];
+  let children: { key: string, val: unknown, childPath: string, isRemoved: boolean }[] = [];
   let childCount = 0;
   
   if (isArray) {
-    childCount = (data as any[]).length;
+    childCount = (data as unknown[]).length;
     if (expanded) {
-      children = (data as any[]).map((val, idx) => ({
+      children = (data as unknown[]).map((val, idx) => ({
         key: String(idx),
         val,
         childPath: currentPath ? `${currentPath}[${idx}]` : `[${idx}]`,
@@ -132,13 +116,13 @@ export function JsonTree({ data, depth = 0, name, isLast = true, diffs = [], cur
       }));
     }
   } else {
-    const keys = Object.keys(data as Record<string, any>);
+    const keys = Object.keys(data as Record<string, unknown>);
     childCount = keys.length;
     if (expanded) {
       keys.forEach(key => {
         children.push({
           key,
-          val: (data as any)[key],
+          val: (data as Record<string, unknown>)[key],
           childPath: currentPath ? `${currentPath}.${key}` : key,
           isRemoved: false
         });
@@ -169,43 +153,47 @@ export function JsonTree({ data, depth = 0, name, isLast = true, diffs = [], cur
 
   if (isEmpty) {
     return (
-      <div className={`flex font-mono text-xs whitespace-pre rounded px-1 w-fit ${bgColorClass}`}>
-        {name && <span className="text-gray-700 mr-1">"{name}":</span>}
-        <span className="text-gray-600">{bracketOpen}{bracketClose}</span>
-        {!isLast && <span className="text-gray-600">,</span>}
+      <div className={`flex font-mono text-[12px] leading-5 whitespace-pre rounded px-1 w-full ${bgColorClass}`}>
+        {prefix}
+        <div className="flex">
+          {name && <span className="text-slate-700 mr-1">"{name}":</span>}
+          <span className="text-slate-500">{bracketOpen}{bracketClose}</span>
+          {!isLast && <span className="text-slate-500">,</span>}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={`font-mono text-xs rounded ${bgColorClass} w-fit`}>
-      <div className="flex items-center cursor-pointer select-none hover:bg-gray-100/50 w-fit pr-2 rounded px-1" onClick={toggle} data-testid={`toggle-${name || 'root'}`}>
-        <span className="text-gray-400 mr-1 w-3 text-center inline-block">{expanded ? '▼' : '▶'}</span>
-        {name && <span className={`mr-1 ${lineThrough ? 'text-red-500 line-through' : 'text-gray-700'}`}>"{name}":</span>}
-        <span className="text-gray-600">{bracketOpen}</span>
+    <div className={`font-mono text-[12px] leading-5 rounded ${bgColorClass} w-full`}>
+      <div className="flex items-center cursor-pointer select-none hover:bg-slate-100/50 w-full pr-2 rounded px-1" onClick={toggle} data-testid={`toggle-${name || 'root'}`}>
+        {prefix}
+        <span className="text-slate-400 mr-1 w-3 text-center inline-block">{expanded ? '▼' : '▶'}</span>
+        {name && <span className={`mr-1 ${lineThrough ? 'text-rose-500 line-through' : 'text-slate-700'}`}>"{name}":</span>}
+        <span className="text-slate-600">{bracketOpen}</span>
         {!expanded && (
-          <span className="text-gray-400 mx-1">
+          <span className="text-slate-400 mx-1">
             {isArray ? `${childCount} items` : `${childCount} keys`}
           </span>
         )}
-        {!expanded && <span className="text-gray-600">{bracketClose}</span>}
-        {!expanded && !isLast && <span className="text-gray-600">,</span>}
+        {!expanded && <span className="text-slate-600">{bracketClose}</span>}
+        {!expanded && !isLast && <span className="text-slate-600">,</span>}
       </div>
 
       {expanded && (
-        <div className="pl-4 border-l border-gray-200 ml-1.5 my-0.5">
-          {children.slice(0, isArray ? visibleCount : undefined).map((child, idx) => (
+        <div className="pl-4 border-l border-slate-300 hover:border-slate-400 transition-colors ml-1.5 my-0.5">
+          {children.slice(0, visibleCount).map((child, idx) => (
              <JsonTree 
                key={child.key} 
                data={child.val} 
                name={isArray ? undefined : child.key}
                depth={depth + 1} 
-               isLast={idx === (isArray ? Math.min(children.length, visibleCount) : children.length) - 1} 
+               isLast={idx === Math.min(children.length, visibleCount) - 1} 
                diffs={diffs}
                currentPath={child.childPath}
              />
           ))}
-          {isArray && visibleCount < children.length && (
+          {visibleCount < children.length && (
             <div 
               className="text-blue-500 cursor-pointer hover:underline text-xs py-1"
               onClick={() => setVisibleCount(v => v + 25)}
@@ -218,8 +206,9 @@ export function JsonTree({ data, depth = 0, name, isLast = true, diffs = [], cur
       )}
       {expanded && (
         <div className="flex pl-1">
-          <span className="text-gray-600">{bracketClose}</span>
-          {!isLast && <span className="text-gray-600">,</span>}
+          <span className="inline-block w-4 text-center mr-1 text-transparent select-none"> </span>
+          <span className="text-slate-600 ml-4">{bracketClose}</span>
+          {!isLast && <span className="text-slate-600">,</span>}
         </div>
       )}
     </div>

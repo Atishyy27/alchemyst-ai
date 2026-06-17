@@ -21,21 +21,16 @@ describe('JsonTree Lazy Expansion', () => {
     expect(end - start).toBeLessThan(200);
     expect(stringifySpy).not.toHaveBeenCalled();
 
-    // Verify it rendered collapsed
-    // root has 1 key
-    expect(screen.getByText(/1 keys/)).toBeInTheDocument();
+    // Verify it rendered with root expanded, but arr collapsed
+    expect(screen.queryByText(/1 keys/)).not.toBeInTheDocument();
     
-    // Check pagination by expanding root, then arr
-    const toggleRoot = screen.getByTestId('toggle-root');
-    fireEvent.click(toggleRoot);
-
     // Now we should see the arr collapsed with 15000 items
     expect(screen.getByText(/15000 items/)).toBeInTheDocument();
     
     const toggleArr = screen.getByTestId('toggle-arr');
     fireEvent.click(toggleArr);
 
-    // Should render only 50 items
+    // Should render only 25 items initially
     const loadMore = screen.getByTestId('load-more-arr');
     expect(loadMore).toBeInTheDocument();
     expect(loadMore.textContent).toContain('remaining');

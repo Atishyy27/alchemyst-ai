@@ -17,16 +17,22 @@ describe('JsonTree', () => {
 
     render(<JsonTree data={data} />);
 
-    // level 1 and 2 should be expanded by default (depth 1 and 2)
-    // level 3 should be collapsed
-    
     // Check level1 key is visible
     expect(screen.getByText(/"level1":/)).toBeInTheDocument();
     
+    // Check level2 key is NOT visible yet
+    expect(screen.queryByText(/"level2":/)).not.toBeInTheDocument();
+
+    // Now let's click the toggle for level1
+    fireEvent.click(screen.getByTestId('toggle-level1'));
+
     // Check level2 key is visible
     expect(screen.getByText(/"level2":/)).toBeInTheDocument();
-    
-    // Check level3 key is visible (because level 2 is expanded, it renders its children keys)
+
+    // Now let's click the toggle for level2
+    fireEvent.click(screen.getByTestId('toggle-level2'));
+
+    // Check level3 key is visible
     expect(screen.getByText(/"level3":/)).toBeInTheDocument();
 
     // Check "hidden initially" is NOT in document, because level 3 is depth 3 (which is collapsed)
