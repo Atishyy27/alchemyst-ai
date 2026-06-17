@@ -537,19 +537,27 @@ export class AgentServer {
 
   private delay(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, ms);
+      let timer: ReturnType<typeof setTimeout>;
+
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+
       if (signal) {
-        const onAbort = () => {
-          clearTimeout(timer);
-          reject(new DOMException("Aborted", "AbortError"));
-        };
         if (signal.aborted) {
-          clearTimeout(timer);
           reject(new DOMException("Aborted", "AbortError"));
           return;
         }
         signal.addEventListener("abort", onAbort, { once: true });
       }
+
+      timer = setTimeout(() => {
+        if (signal) {
+          signal.removeEventListener("abort", onAbort);
+        }
+        resolve();
+      }, ms);
     });
   }
 

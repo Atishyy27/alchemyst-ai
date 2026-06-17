@@ -53,6 +53,9 @@ class HighlightRegistry {
       if (!state.timelineFilter.showToolCalls || state.timelineFilter.searchQuery) {
         state.setTimelineFilter({ showToolCalls: true, searchQuery: '' });
       }
+      if (state.activeTab !== 'timeline') {
+        state.setActiveTab('timeline');
+      }
 
       this.listRef.scrollToRow({ index: timelineIndex, align: 'center' });
       

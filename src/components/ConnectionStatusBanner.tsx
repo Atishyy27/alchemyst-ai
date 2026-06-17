@@ -10,7 +10,11 @@ import { useAppStore } from '@/lib/store/appStore';
  * - Takes its own height in the document flow (never an overlay).
  *   Parent should place it above the main content in a flex column.
  */
-export function ConnectionStatusBanner() {
+interface ConnectionStatusBannerProps {
+  onRetry?: () => void;
+}
+
+export function ConnectionStatusBanner({ onRetry }: ConnectionStatusBannerProps) {
   const connectionStatus = useAppStore((state) => state.connectionStatus);
 
   if (connectionStatus === 'connected' || connectionStatus === 'idle') {
@@ -39,9 +43,12 @@ export function ConnectionStatusBanner() {
   return (
     <div
       data-testid="connection-status-banner"
-      className="w-full px-4 py-2 text-center text-sm font-medium bg-amber-500 text-white shadow-sm flex-shrink-0"
+      className={`w-full px-4 py-2 text-center text-sm font-medium bg-amber-500 text-white shadow-sm flex-shrink-0 ${
+        connectionStatus === 'disconnected' && onRetry ? 'cursor-pointer hover:bg-amber-600' : ''
+      }`}
       role="status"
       aria-live="polite"
+      onClick={connectionStatus === 'disconnected' ? onRetry : undefined}
     >
       <span className="inline-flex items-center gap-2">
         {connectionStatus === 'reconnecting' && (

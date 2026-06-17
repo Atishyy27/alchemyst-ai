@@ -37,7 +37,7 @@
 //  ───────────────|──────────────────────|────────────────|──────────────────────────────
 //  idle           | CONNECT              | connecting     | User initiates connection
 //  connecting     | WS_OPEN              | connected      | WebSocket.onopen fires
-//  connecting     | WS_ERROR             | disconnected   | Initial connection failed (no retry from first attempt)
+//  connecting     | WS_ERROR / WS_CLOSE  | reconnecting   | Connection failed, begin retry loop
 //  connected      | WS_CLOSE / WS_ERROR  | reconnecting   | Unexpected drop; begin retry loop
 //  connected      | DISCONNECT           | disconnected   | Clean user-initiated close
 //  reconnecting   | RETRY                | connecting     | Retry timer fires, try again
@@ -98,7 +98,7 @@ export function connectionTransition(
 
     case 'connecting':
       if (event.type === 'WS_OPEN') return 'connected';
-      if (event.type === 'WS_ERROR') return 'disconnected';
+      if (event.type === 'WS_ERROR' || event.type === 'WS_CLOSE') return 'reconnecting';
       return null;
 
     case 'connected':

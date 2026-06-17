@@ -73,8 +73,10 @@ export interface AppState {
   connectionStatus: ConnectionState;
   lastProcessedSeq: number;
   timelineFilter: TimelineFilter;
+  activeTab: 'timeline' | 'context';
 
   // Actions
+  setActiveTab: (tab: 'timeline' | 'context') => void;
   setConnectionStatus: (status: ConnectionState) => void;
   processServerMessage: (msg: ServerMessage) => void;
   sendUserMessage: (content: string, stream_id: string) => void;
@@ -102,8 +104,10 @@ export const useAppStore = create<AppState>()((set) => ({
     showErrors: true,
     searchQuery: '',
   },
+  activeTab: 'timeline',
 
   // Actions
+  setActiveTab: (tab) => set({ activeTab: tab }),
   setTimelineFilter: (filter) => set((state) => ({ timelineFilter: { ...state.timelineFilter, ...filter } })),
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 

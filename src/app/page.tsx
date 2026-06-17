@@ -12,7 +12,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export default function Home() {
   const cmRef = useRef<ConnectionManager | null>(null);
-  const [activeTab, setActiveTab] = useState<'timeline' | 'context'>('timeline');
+  const activeTab = useAppStore((state) => state.activeTab);
+  const setActiveTab = useAppStore((state) => state.setActiveTab);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,7 +62,7 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
       {/* Top Connection Banner */}
-      <ConnectionStatusBanner />
+      <ConnectionStatusBanner onRetry={() => cmRef.current?.connect()} />
       
       {/* Toast Notification */}
       {toast && (
