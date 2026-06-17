@@ -28,9 +28,8 @@ describe('TimelineRow', () => {
     expect(state.timeline[0].type).toBe('context_snapshot');
     expect(state.timeline[1].type).toBe('message');
 
-    // Render Context Snapshot row
     const { container: ctxContainer } = render(<TimelineRow index={0} style={{}} />);
-    expect(ctxContainer.textContent).toContain('Context Snapshot');
+    expect(ctxContainer.textContent).toContain('CONTEXT');
     expect(ctxContainer.textContent).toContain('12 bytes'); // '{"test":123}' is 12 bytes
 
     // Render Message row
@@ -39,13 +38,13 @@ describe('TimelineRow', () => {
     // We expect the message row to contain 3 sub-items: text segment, tool_call segment, text segment
     // Let's verify the text segments
     const textSegments = msgContainer.querySelectorAll('[data-testid^="text-segment-1-"]');
-    expect(textSegments.length).toBe(2);
+    expect(textSegments).toHaveLength(2);
     expect(textSegments[0].textContent).toContain('Streamed 2 tokens'); // First text.
     expect(textSegments[1].textContent).toContain('Streamed 2 tokens'); // Second text.
 
     // Let's verify the tool call segment
     const toolSegments = msgContainer.querySelectorAll('[data-testid^="tool-segment-1-"]');
-    expect(toolSegments.length).toBe(1);
+    expect(toolSegments).toHaveLength(1);
     expect(toolSegments[0].textContent).toContain('get_weather');
     expect(toolSegments[0].textContent).toContain('{"loc":"NY"}');
     expect(toolSegments[0].textContent).toContain('completed');

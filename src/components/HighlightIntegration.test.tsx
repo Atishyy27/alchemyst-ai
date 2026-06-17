@@ -8,13 +8,15 @@ import { highlightRegistry } from '@/lib/highlightRegistry';
 
 // Mock react-window to actually render the rows so we can find them
 vi.mock('react-window', () => {
-  const { forwardRef, useImperativeHandle } = require('react');
+  const { useLayoutEffect } = require('react');
   return {
     List: ({ rowComponent, rowCount, listRef }: any) => {
-      if (listRef) {
-        if (typeof listRef === 'function') listRef({ scrollToRow: () => {} });
-        else listRef.current = { scrollToRow: () => {} };
-      }
+      useLayoutEffect(() => {
+        if (listRef) {
+          if (typeof listRef === 'function') listRef({ scrollToRow: () => {} });
+          else listRef.current = { scrollToRow: () => {} };
+        }
+      }, [listRef]);
       const Child = rowComponent;
       const items = [];
       for(let i = 0; i < rowCount; i++) {

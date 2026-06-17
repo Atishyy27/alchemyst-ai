@@ -60,7 +60,7 @@ describe('Timeline Chaos Mode', () => {
     });
 
     render(<TimelinePanel />);
-    const ctxEl = screen.getByText('Context Snapshot');
+    const ctxEl = screen.getByText('CONTEXT');
     expect(ctxEl).toBeDefined();
     
     // Assert length is shown (JSON.stringify of giantData is roughly 1MB+)

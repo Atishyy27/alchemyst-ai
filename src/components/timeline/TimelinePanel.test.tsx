@@ -48,3 +48,25 @@ describe('TimelinePanel - Virtualization', () => {
     expect(renderedRows.length).toBeLessThan(100);
   });
 });
+
+describe('Timeline Coverage', () => {
+  beforeEach(() => {
+    useAppStore.getState().resetChat();
+  });
+
+  it('renders PING, PONG, and ERROR rows when dispatched', () => {
+    useAppStore.setState({
+      timeline: [
+        { type: 'ping', seq: 100, challenge: 'ch1' },
+        { type: 'pong', challenge: 'ch1', timestamp: 12345 },
+        { type: 'error', seq: 101, code: 'TEST_ERR', message: 'Something went wrong' }
+      ]
+    });
+    
+    const { getByText } = render(<TimelinePanel />);
+    expect(getByText('PING')).toBeDefined();
+    expect(getByText('PONG')).toBeDefined();
+    expect(getByText('ERROR')).toBeDefined();
+    expect(getByText(/Something went wrong/)).toBeDefined();
+  });
+});
