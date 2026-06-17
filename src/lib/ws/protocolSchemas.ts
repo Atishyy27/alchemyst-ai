@@ -70,7 +70,7 @@ export const ContextSnapshotMessageSchema = z.object({
 export const PingMessageSchema = z.object({
   type: z.literal('PING'),
   seq: z.number(),
-  challenge: z.string(),
+  challenge: z.string().optional().default(''),
 });
 
 export const StreamEndMessageSchema = z.object({

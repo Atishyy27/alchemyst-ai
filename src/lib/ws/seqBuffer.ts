@@ -55,7 +55,14 @@ export class SeqBuffer {
   private seen: Set<number> = new Set();
 
   /** The next seq value we expect to release. */
-  private expectedSeq: number = 1;
+  private expectedSeq: number;
+  private readonly initialSeq: number;
+  private hasPopped: boolean = false;
+
+  constructor(initialSeq: number = 1) {
+    this.initialSeq = initialSeq;
+    this.expectedSeq = initialSeq;
+  }
 
   // ─────────────────────────────────────────────────────────
   // Public API
@@ -78,6 +85,13 @@ export class SeqBuffer {
       return;
     }
     this.seen.add(seq);
+
+    // If we haven't popped anything yet, and a message arrives with a seq
+    // lower than our expected start (e.g. initialSeq is 1 but we get 0),
+    // dynamically adjust our start down to accommodate it.
+    if (!this.hasPopped && seq < this.expectedSeq) {
+      this.expectedSeq = seq;
+    }
 
     // Discard messages with seq below expectedSeq — they were
     // already processed (possible after a RESUME replay).
@@ -110,6 +124,7 @@ export class SeqBuffer {
       // Non-null assertion is safe: we just checked length > 0.
       ready.push(this.buffer.shift()!);
       this.expectedSeq++;
+      this.hasPopped = true;
     }
 
     return ready;
@@ -139,7 +154,8 @@ export class SeqBuffer {
   reset(): void {
     this.buffer = [];
     this.seen.clear();
-    this.expectedSeq = 1;
+    this.expectedSeq = this.initialSeq;
+    this.hasPopped = false;
   }
 
   /**

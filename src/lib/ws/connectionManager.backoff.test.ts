@@ -5,18 +5,18 @@
 // with exponential backoff and caps at maxRetryDelayMs.
 //
 // Config under test:
-//   baseRetryDelayMs: 1000, maxRetryDelayMs: 10000, maxRetries: 6
+//   baseRetryDelayMs: 500, maxRetryDelayMs: 10000, maxRetries: 6
 //
 // Backoff formula (from connectionManager.ts L686-688):
 //   delay = min(base * 2^retryCount + random()*500, max)
 //
 // With Math.random() mocked to 0 (zero jitter):
-//   retry 0: 1000 * 2^0 = 1000
-//   retry 1: 1000 * 2^1 = 2000
-//   retry 2: 1000 * 2^2 = 4000
-//   retry 3: 1000 * 2^3 = 8000
-//   retry 4: 1000 * 2^4 = 16000 → capped to 10000
-//   retry 5: 1000 * 2^5 = 32000 → capped to 10000
+//   retry 0: 500 * 2^0 = 500
+//   retry 1: 500 * 2^1 = 1000
+//   retry 2: 500 * 2^2 = 2000
+//   retry 3: 500 * 2^3 = 4000
+//   retry 4: 500 * 2^4 = 8000
+//   retry 5: 500 * 2^5 = 16000 → capped to 10000
 //
 // Jitter range: [0, 500) added before cap.
 // ─────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ describe('ConnectionManager exponential backoff', () => {
   it('schedules retries with exponentially increasing delays, capped at max', () => {
     const cm = new ConnectionManager({
       url: 'ws://test/ws',
-      baseRetryDelayMs: 1000,
+      baseRetryDelayMs: 500,
       maxRetryDelayMs: 10_000,
       maxRetries: 6,
     });
@@ -122,8 +122,8 @@ describe('ConnectionManager exponential backoff', () => {
     ws0.simulateClose(1006, 'abnormal');
     expect(cm.getConnectionState()).toBe('reconnecting');
 
-    // Expected delays (zero jitter): 1000, 2000, 4000, 8000, 10000, 10000
-    const expectedDelays = [1000, 2000, 4000, 8000, 10000, 10000];
+    // Expected delays (zero jitter): 500, 1000, 2000, 4000, 8000, 10000
+    const expectedDelays = [500, 1000, 2000, 4000, 8000, 10000];
 
     for (let i = 0; i < expectedDelays.length; i++) {
       const prevInstanceCount = MockWebSocket.instances.length;

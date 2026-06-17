@@ -112,6 +112,7 @@ export type DebugEvent =
   | { readonly kind: 'validation_error'; readonly direction: 'inbound' | 'outbound'; readonly error: string; readonly timestamp: number }
   | { readonly kind: 'state_transition'; readonly from: ConnectionState; readonly to: ConnectionState; readonly event: string; readonly timestamp: number }
   | { readonly kind: 'resume_sent'; readonly last_seq: number; readonly timestamp: number }
+  | { readonly kind: 'tool_ack_sent'; readonly call_id: string; readonly timestamp: number }
   | { readonly kind: 'message_dropped'; readonly reason: string; readonly timestamp: number };
 
 // ── Configuration ─────────────────────────────────────────────
@@ -126,7 +127,7 @@ export interface ConnectionManagerConfig {
   /** Base delay (ms) for exponential backoff. Default: 1000. */
   readonly baseRetryDelayMs?: number;
 
-  /** Maximum backoff delay (ms). Default: 30000. */
+  /** Maximum backoff delay (ms). Default: 10000. */
   readonly maxRetryDelayMs?: number;
 
   /** Enable console logging of state transitions and messages. Default: false. */
@@ -137,8 +138,8 @@ export interface ConnectionManagerConfig {
 
 const DEFAULT_URL = 'ws://localhost:4747/ws';
 const DEFAULT_MAX_RETRIES = 5;
-const DEFAULT_BASE_RETRY_DELAY_MS = 1000;
-const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
+const DEFAULT_BASE_RETRY_DELAY_MS = 500;
+const DEFAULT_MAX_RETRY_DELAY_MS = 10_000;
 
 // ═══════════════════════════════════════════════════════════════
 
@@ -235,6 +236,13 @@ export class ConnectionManager {
   // ── Intentional disconnect flag ─────────────────────────
   private intentionalDisconnect = false;
 
+  // ── Delivery Tracking ───────────────────────────────────
+  private acknowledgedCalls = new Set<string>();
+
+  // ── Starvation Recovery ─────────────────────────────────
+  private starvationTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly starvationTimeoutMs = 5000;
+
   // ── Heartbeat stats (for testing / UI) ──────────────────
   private heartbeatStats = {
     totalReceived: 0,
@@ -285,9 +293,14 @@ export class ConnectionManager {
   disconnect(): void {
     this.intentionalDisconnect = true;
     this.cancelRetry();
+    this.clearStarvationTimer();
     this.pendingOutbound.length = 0;
 
     if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
       this.ws.close(1000, 'client disconnect');
       this.ws = null;
     }
@@ -306,7 +319,7 @@ export class ConnectionManager {
    * @throws ZodError if the message is malformed.
    * @throws Error if in 'idle' state.
    */
-  send(message: ClientMessage): void {
+  send(message: ClientMessage): boolean {
     // Validate early (fail-fast) regardless of connection state.
     // This catches malformed messages at queue time, not flush time.
     const validated = parseOutgoingMessage(message);
@@ -352,8 +365,14 @@ export class ConnectionManager {
     // bookkeeping is cleared.
     //
     if (validated.type === 'USER_MESSAGE') {
+      if (this.state !== 'connected' || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.log('→ FAILED TO SEND USER_MESSAGE (disconnected)');
+        return false;
+      }
       this.seqBuffer.reset();
+      this.clearStarvationTimer();
       this.lastDeliveredSeq = 0;
+      this.acknowledgedCalls.clear();
       this.log('Session reset: SeqBuffer cleared, lastDeliveredSeq = 0');
     }
 
@@ -361,10 +380,16 @@ export class ConnectionManager {
     if (this.state === 'connected' && this.ws) {
       this.ws.send(JSON.stringify(validated));
       this.log('→ SENT', validated.type);
+      return true;
     } else {
       // State is 'connecting' or 'reconnecting' — queue for later.
+      if (validated.type === 'TOOL_ACK' || validated.type === 'PONG') {
+        this.log('→ DROPPED (fire-and-forget)', validated.type);
+        return false;
+      }
       this.pendingOutbound.push(validated);
       this.log('→ QUEUED', validated.type, `(${this.pendingOutbound.length} pending)`);
+      return true;
     }
   }
 
@@ -449,6 +474,7 @@ export class ConnectionManager {
         corruptReceived: 0,
         pongsSent: 0,
       };
+      this.acknowledgedCalls.clear();
       this.transition({ type: 'WS_OPEN' });
 
       // If reconnecting, send RESUME with last *delivered* seq.
@@ -483,6 +509,12 @@ export class ConnectionManager {
 
       if (this.intentionalDisconnect) {
         // Already transitioned via disconnect().
+        return;
+      }
+
+      if (event.code === 4001) {
+        this.log('Session replaced by another tab. Disconnecting.');
+        this.transition({ type: 'DISCONNECT' });
         return;
       }
 
@@ -555,6 +587,18 @@ export class ConnectionManager {
       // PING still flows through the buffer for seq tracking.
     }
 
+    if (message.type === 'TOOL_CALL' && message.call_id) {
+      if (!this.acknowledgedCalls.has(message.call_id)) {
+        this.acknowledgedCalls.add(message.call_id);
+        this.send({ type: 'TOOL_ACK', call_id: message.call_id });
+        this.emitDebugEvent({
+          kind: 'tool_ack_sent',
+          call_id: message.call_id,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
     // Step 4: Route through SeqBuffer.
     // This deduplicates and reorders. It does NOT advance
     // lastDeliveredSeq — that only happens in step 5.
@@ -570,6 +614,10 @@ export class ConnectionManager {
       // Advance only after successful delivery.
       this.lastDeliveredSeq = msg.seq;
     }
+
+    // Step 6: Check for buffer starvation.
+    // If popReady returned nothing but pendingCount > 0, we have a gap.
+    this.checkStarvation();
   }
 
   // ─────────────────────────────────────────────────────────
@@ -661,7 +709,12 @@ export class ConnectionManager {
       if (msg.type === 'USER_MESSAGE') {
         this.seqBuffer.reset();
         this.lastDeliveredSeq = 0;
+        this.acknowledgedCalls.clear();
         this.log('Session reset (from queued USER_MESSAGE)');
+      }
+
+      if (msg.type === 'TOOL_ACK' || msg.type === 'PONG') {
+        continue;
       }
 
       if (ws.readyState === WebSocket.OPEN) {
@@ -788,6 +841,35 @@ export class ConnectionManager {
   private log(...args: unknown[]): void {
     if (this.debug) {
       console.log('[ConnectionManager]', ...args);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // SeqBuffer Starvation Recovery
+  // ─────────────────────────────────────────────────────────
+
+  private clearStarvationTimer(): void {
+    if (this.starvationTimer) {
+      clearTimeout(this.starvationTimer);
+      this.starvationTimer = null;
+    }
+  }
+
+  private checkStarvation(): void {
+    if (this.seqBuffer.pendingCount > 0) {
+      if (!this.starvationTimer) {
+        this.starvationTimer = setTimeout(() => {
+          this.log('SeqBuffer starvation detected. Forcing reconnect...');
+          this.clearStarvationTimer();
+          if (this.ws) {
+            // Close with custom code so the backend knows why, or just normal close.
+            // 4000 is a standard code for custom application closures.
+            this.ws.close(4000, 'starvation timeout');
+          }
+        }, this.starvationTimeoutMs);
+      }
+    } else {
+      this.clearStarvationTimer();
     }
   }
 }

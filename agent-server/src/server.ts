@@ -125,7 +125,7 @@ export class AgentServer {
     // Replace previous connection
     if (this.activeWs && this.activeWs.readyState === WebSocket.OPEN) {
       console.log("[agent-server] Closing previous connection");
-      this.activeWs.close(1000, "replaced");
+      this.activeWs.close(4001, "replaced_by_new_session");
     }
 
     this.stopHeartbeat();

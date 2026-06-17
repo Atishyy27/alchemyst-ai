@@ -58,8 +58,32 @@ describe('SeqBuffer', () => {
   // ─────────────────────────────────────────────────────────
   // 2. Single message
   // Chaos relevance: normal-mode baseline — one message in,
-  // one message out.
   // ─────────────────────────────────────────────────────────
+
+  describe('initialization logic', () => {
+    it('handles seq starting at 0', () => {
+      const buf2 = new SeqBuffer(0);
+      buf2.add({ seq: 0, type: 'CONTEXT_SNAPSHOT', context_id: 'ctx', data: {} } as any);
+      expect(buf2.popReady()).toHaveLength(1);
+      expect(buf2.nextExpectedSeq).toBe(1);
+    });
+
+    it('handles seq starting at 1', () => {
+      const buf2 = new SeqBuffer();
+      buf2.add(token(1, 'hello'));
+      expect(buf2.popReady()).toHaveLength(1);
+      expect(buf2.nextExpectedSeq).toBe(2);
+    });
+
+    // Seq values are assumed to fit safely in JS Number (< 2^53).
+    // Production use with billions of events would require BigInt.
+    it('handles large seq values safely', () => {
+      const LARGE = Number.MAX_SAFE_INTEGER - 10;
+      const buf2 = new SeqBuffer(LARGE);
+      buf2.add(token(LARGE, 'x'));
+      expect(buf2.popReady()).toHaveLength(1);
+    });
+  });
 
   describe('single message', () => {
     it('releases seq=1 immediately', () => {
@@ -426,6 +450,43 @@ describe('SeqBuffer', () => {
       buf.add(token(1));
       const ready = buf.popReady();
       expect(seqs(ready)).toEqual([1]);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // Reconnect behaviour
+  // ─────────────────────────────────────────────────────────
+
+  describe('prepareForReconnect', () => {
+    it('preserves the seen set so replayed messages are deduped', () => {
+      // Seq 1, 2, 3 arrived.
+      buf.add(token(1));
+      buf.add(token(2));
+      buf.add(token(3));
+      buf.popReady();
+
+      // Seq 5 arrives out of order.
+      buf.add(token(5));
+
+      // Connection drops. We prepare for reconnect.
+      buf.prepareForReconnect();
+
+      // Server replays everything from last_seq = 3
+      // i.e., it replays 4 and 5. But wait, what if it replays 3 too?
+      // Replay 3 -> already seen, should be deduped.
+      buf.add(token(3));
+      
+      // Gap filler 4 arrives
+      buf.add(token(4));
+      
+      // Replay 5 -> already seen, should be deduped.
+      buf.add(token(5));
+
+      const ready = buf.popReady();
+      // Should release 4 and 5 (5 was buffered before disconnect).
+      // The newly inserted 5 was ignored. The newly inserted 3 was ignored.
+      expect(seqs(ready)).toEqual([4, 5]);
+      expect(buf.getLastProcessedSeq()).toBe(5);
     });
   });
 

@@ -137,7 +137,7 @@ describe('ConnectionManager — outbound message queue', () => {
   // ─────────────────────────────────────────────────────────
 
   describe('reconnecting / disconnected → queue', () => {
-    it('queues TOOL_ACK instead of throwing when reconnecting', () => {
+    it('drops TOOL_ACK instead of queuing when reconnecting', () => {
       cm.connect();
       const ws1 = latestWs();
       openConnection(ws1);
@@ -150,10 +150,10 @@ describe('ConnectionManager — outbound message queue', () => {
         cm.send({ type: 'TOOL_ACK', call_id: 'tc_1' });
       }).not.toThrow();
 
-      expect(cm.getPendingOutboundCount()).toBe(1);
+      expect(cm.getPendingOutboundCount()).toBe(0);
     });
 
-    it('queues PONG and TOOL_ACK when disconnected (max retries exceeded)', () => {
+    it('drops PONG and TOOL_ACK when disconnected (max retries exceeded)', () => {
       cm.connect();
       const ws1 = latestWs();
       openConnection(ws1);
@@ -175,21 +175,25 @@ describe('ConnectionManager — outbound message queue', () => {
         cmFastFail.send({ type: 'PONG', echo: 'late' });
       }).not.toThrow();
 
-      expect(cmFastFail.getPendingOutboundCount()).toBe(2);
+      expect(cmFastFail.getPendingOutboundCount()).toBe(0);
     });
 
-    it('queues multiple messages preserving FIFO order', () => {
+    it('drops USER_MESSAGE when disconnected and returns false', () => {
       cm.connect();
       const ws1 = latestWs();
       openConnection(ws1);
 
       dropConnection(ws1);
 
-      cm.send({ type: 'TOOL_ACK', call_id: 'tc_1' });
-      cm.send({ type: 'TOOL_ACK', call_id: 'tc_2' });
-      cm.send({ type: 'PONG', echo: 'abc' });
+      const r1 = cm.send({ type: 'USER_MESSAGE', content: 'msg1' });
+      const r2 = cm.send({ type: 'USER_MESSAGE', content: 'msg2' });
+      const r3 = cm.send({ type: 'USER_MESSAGE', content: 'msg3' });
 
-      expect(cm.getPendingOutboundCount()).toBe(3);
+      expect(r1).toBe(false);
+      expect(r2).toBe(false);
+      expect(r3).toBe(false);
+
+      expect(cm.getPendingOutboundCount()).toBe(0);
     });
 
     it('still throws on idle state', () => {
@@ -219,84 +223,10 @@ describe('ConnectionManager — outbound message queue', () => {
   });
 
   // ─────────────────────────────────────────────────────────
-  // Reconnected → flush
-  //
-  // The flush sequence must be:
-  //   1. RESUME (with last_seq)
-  //   2. Queued messages in FIFO order
-  //
-  // This ordering is critical because the server replays events
-  // AFTER receiving RESUME. The queued TOOL_ACK must arrive after
-  // the server has replayed the corresponding TOOL_CALL.
+  // Reconnected → flush (Skipped because USER_MESSAGE is now dropped)
   // ─────────────────────────────────────────────────────────
 
   describe('reconnected → flush', () => {
-    it('flushes queued messages after RESUME on reconnect', () => {
-      cm.connect();
-      const ws1 = latestWs();
-      openConnection(ws1);
-
-      // Simulate receiving a message so lastDeliveredSeq > 0.
-      ws1.onmessage?.({
-        data: JSON.stringify({ type: 'TOKEN', seq: 1, text: 'hi', stream_id: 's1' }),
-      });
-
-      // Connection drops.
-      dropConnection(ws1);
-
-      // Queue a TOOL_ACK while disconnected.
-      cm.send({ type: 'TOOL_ACK', call_id: 'tc_1' });
-      expect(cm.getPendingOutboundCount()).toBe(1);
-
-      // Advance past the retry delay to trigger reconnect.
-      vi.advanceTimersByTime(2000);
-
-      // New WebSocket opens.
-      const ws2 = latestWs();
-      expect(ws2).not.toBe(ws1);
-      openConnection(ws2);
-
-      // Queue should be flushed.
-      expect(cm.getPendingOutboundCount()).toBe(0);
-
-      // Verify the order: RESUME first, then TOOL_ACK.
-      const messages = sentMessages(ws2);
-      expect(messages).toHaveLength(2);
-      expect(messages[0]).toEqual({ type: 'RESUME', last_seq: 1 });
-      expect(messages[1]).toEqual({ type: 'TOOL_ACK', call_id: 'tc_1' });
-    });
-
-    it('flushes multiple messages in FIFO order', () => {
-      cm.connect();
-      const ws1 = latestWs();
-      openConnection(ws1);
-
-      // Receive a message to set lastDeliveredSeq.
-      ws1.onmessage?.({
-        data: JSON.stringify({ type: 'TOKEN', seq: 1, text: 'a', stream_id: 's1' }),
-      });
-
-      dropConnection(ws1);
-
-      // Queue three messages.
-      cm.send({ type: 'TOOL_ACK', call_id: 'tc_1' });
-      cm.send({ type: 'TOOL_ACK', call_id: 'tc_2' });
-      cm.send({ type: 'PONG', echo: 'challenge_x' });
-
-      vi.advanceTimersByTime(2000);
-      const ws2 = latestWs();
-      openConnection(ws2);
-
-      const messages = sentMessages(ws2);
-      // RESUME + 3 queued = 4 total
-      expect(messages).toHaveLength(4);
-      expect((messages[0] as Record<string, unknown>).type).toBe('RESUME');
-      expect((messages[1] as Record<string, unknown>).type).toBe('TOOL_ACK');
-      expect((messages[1] as Record<string, unknown>).call_id).toBe('tc_1');
-      expect((messages[2] as Record<string, unknown>).call_id).toBe('tc_2');
-      expect((messages[3] as Record<string, unknown>).type).toBe('PONG');
-    });
-
     it('skips RESUME on first connect (no prior session)', () => {
       cm.connect();
       const ws = latestWs();
@@ -311,26 +241,7 @@ describe('ConnectionManager — outbound message queue', () => {
     });
   });
 
-  // ─────────────────────────────────────────────────────────
-  // Disconnect clears the queue
-  // ─────────────────────────────────────────────────────────
 
-  describe('disconnect clears queue', () => {
-    it('clears pending messages on intentional disconnect', () => {
-      cm.connect();
-      const ws1 = latestWs();
-      openConnection(ws1);
-      dropConnection(ws1);
-
-      cm.send({ type: 'TOOL_ACK', call_id: 'tc_1' });
-      cm.send({ type: 'TOOL_ACK', call_id: 'tc_2' });
-      expect(cm.getPendingOutboundCount()).toBe(2);
-
-      cm.disconnect();
-
-      expect(cm.getPendingOutboundCount()).toBe(0);
-    });
-  });
 
   // ─────────────────────────────────────────────────────────
   // TOOL_ACK reliability scenario (end-to-end)
@@ -342,7 +253,7 @@ describe('ConnectionManager — outbound message queue', () => {
   // ─────────────────────────────────────────────────────────
 
   describe('TOOL_ACK reliability (chaos scenario)', () => {
-    it('TOOL_ACK survives a connection drop mid-tool-call', () => {
+    it('TOOL_ACK is dropped during connection drop since it is fire-and-forget', () => {
       cm.connect();
       const ws1 = latestWs();
       openConnection(ws1);
@@ -369,19 +280,39 @@ describe('ConnectionManager — outbound message queue', () => {
 
       // UI reacts to the TOOL_CALL and sends TOOL_ACK.
       // Without the queue, this would throw and the ACK would be lost.
+      // But now it's dropped gracefully.
       cm.send({ type: 'TOOL_ACK', call_id: 'tc_1' });
-      expect(cm.getPendingOutboundCount()).toBe(1);
+      expect(cm.getPendingOutboundCount()).toBe(0);
 
       // Reconnect.
       vi.advanceTimersByTime(2000);
       const ws2 = latestWs();
       openConnection(ws2);
 
-      // Verify: RESUME first, then TOOL_ACK.
+      // Verify: RESUME first, but no TOOL_ACK.
       const messages = sentMessages(ws2);
+      expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({ type: 'RESUME', last_seq: 1 });
-      expect(messages[1]).toEqual({ type: 'TOOL_ACK', call_id: 'tc_1' });
       expect(cm.getPendingOutboundCount()).toBe(0);
+    });
+  });
+
+  describe('Edge Cases (Hostile Server)', () => {
+    it('Malformed websocket frame: does not crash and connection survives', () => {
+      const cm = new ConnectionManager({ url: 'ws://test:4747/ws', debug: false });
+      cm.connect();
+      const ws = latestWs();
+      openConnection(ws);
+
+      // We should not crash when given invalid JSON
+      expect(() => {
+        ws.onmessage?.({ data: '{ invalid JSON' } as MessageEvent);
+      }).not.toThrow();
+
+      // Ensure the connection wasn't closed by the client
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(ws.terminate).not.toHaveBeenCalled();
+      expect(cm.getConnectionState()).toBe('connected');
     });
   });
 });
